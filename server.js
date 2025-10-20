@@ -12,9 +12,16 @@ app.use(express.urlencoded({ extended: true }));
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Simple test route
+// Main app route - redirect to install if no shop parameter
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'install.html'));
+  const { shop } = req.query;
+  
+  if (!shop) {
+    return res.sendFile(path.join(__dirname, 'public', 'install.html'));
+  }
+
+  // For now, show the main interface
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // Health check route
