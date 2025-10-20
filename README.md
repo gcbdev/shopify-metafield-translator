@@ -52,3 +52,6 @@ npm run dev
 - All API calls are authenticated with Shopify
 - Sensitive data is encrypted
 - Rate limiting implemented
+  
+
+------------------------
