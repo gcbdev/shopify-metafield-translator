@@ -1,4 +1,8 @@
 const express = require('express');
+const session = require('express-session');
+const cookieParser = require('cookie-parser');
+const cors = require('cors');
+const helmet = require('helmet');
 const path = require('path');
 const axios = require('axios');
 
@@ -6,13 +10,27 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Basic middleware
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false
+}));
+app.use(cors());
+app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Session configuration
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'your-session-secret',
+  resave: false,
+  saveUninitialized: false,
+  cookie: { secure: false }
+}));
 
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Main app route - redirect to install if no shop parameter
+// Main app route
 app.get('/', (req, res) => {
   const { shop } = req.query;
   
@@ -20,7 +38,7 @@ app.get('/', (req, res) => {
     return res.sendFile(path.join(__dirname, 'public', 'install.html'));
   }
 
-  // For now, show the main interface
+  // Show the main interface
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
@@ -33,7 +51,7 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Real Shopify API integration using REST API directly
+// Simple authentication middleware
 const authenticateShopify = async (req, res, next) => {
   try {
     const shop = req.query.shop;
@@ -56,13 +74,12 @@ const authenticateShopify = async (req, res, next) => {
 app.get('/api/products', authenticateShopify, async (req, res) => {
   try {
     const shop = req.shop;
-    const apiKey = req.apiKey;
     const apiSecret = req.apiSecret;
 
     // Get products from your store
     const response = await axios.get(`https://${shop}/admin/api/2023-10/products.json`, {
       headers: {
-        'X-Shopify-Access-Token': apiSecret, // Using API secret as access token for now
+        'X-Shopify-Access-Token': apiSecret,
         'Content-Type': 'application/json'
       },
       params: {
@@ -127,6 +144,8 @@ app.get('/auth', (req, res) => {
   // Redirect to main app with shop parameter
   res.redirect(`/?shop=${shop}`);
 });
+
+// Translation service using MyMemory API
 async function translateWithMyMemory(text, sourceLanguage, targetLanguage) {
   try {
     const response = await axios.get('https://api.mymemory.translated.net/get', {
@@ -210,7 +229,7 @@ app.post('/api/test-translate', async (req, res) => {
     }
 
     // Get the metafield for the specific product
-    const metafieldResponse = await axios.get(`${req.protocol}://${req.get('host')}/api/product/${productId}/metafield`);
+    const metafieldResponse = await axios.get(`${req.protocol}://${req.get('host')}/api/product/${productId}/metafield?shop=${req.query.shop}`);
     const metafieldData = metafieldResponse.data;
     
     if (!metafieldData.success || !metafieldData.metafield) {
@@ -254,7 +273,7 @@ app.post('/api/translate', async (req, res) => {
     }
 
     // Get the metafield for the specific product
-    const metafieldResponse = await axios.get(`${req.protocol}://${req.get('host')}/api/product/${productId}/metafield`);
+    const metafieldResponse = await axios.get(`${req.protocol}://${req.get('host')}/api/product/${productId}/metafield?shop=${req.query.shop}`);
     const metafieldData = metafieldResponse.data;
     
     if (!metafieldData.success || !metafieldData.metafield) {
