@@ -11,13 +11,5 @@
       "src": "/(.*)",
       "dest": "server.js"
     }
-  ],
-  "env": {
-    "SHOPIFY_API_KEY": "@shopify_api_key",
-    "SHOPIFY_API_SECRET": "@shopify_api_secret",
-    "SHOPIFY_SCOPES": "@shopify_scopes",
-    "SESSION_SECRET": "@session_secret",
-    "TRANSLATION_API_KEY": "@translation_api_key",
-    "TRANSLATION_SERVICE": "@translation_service"
-  }
+  ]
 }
