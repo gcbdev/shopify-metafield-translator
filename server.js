@@ -33,73 +33,145 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Mock API routes for testing
-app.get('/api/products', (req, res) => {
-  // Mock products with metafields for testing
-  const mockProducts = [
-    {
-      id: 1,
-      title: "Wireless Headphones",
-      handle: "wireless-headphones",
-      metafields: [
-        {
-          id: 101,
-          namespace: "custom",
-          key: "specification",
-          value: JSON.stringify({
-            "title": "Premium Wireless Headphones",
-            "description": "High-quality wireless headphones with noise cancellation",
-            "features": [
-              "Active noise cancellation",
-              "30-hour battery life",
-              "Quick charge technology"
-            ],
-            "specifications": {
-              "driver_size": "40mm",
-              "frequency_response": "20Hz - 20kHz",
-              "impedance": "32 ohms"
-            }
-          })
-        }
-      ]
-    },
-    {
-      id: 2,
-      title: "Smart Watch",
-      handle: "smart-watch",
-      metafields: [
-        {
-          id: 102,
-          namespace: "custom",
-          key: "specification",
-          value: JSON.stringify({
-            "title": "Smart Fitness Watch",
-            "description": "Track your fitness and stay connected",
-            "features": [
-              "Heart rate monitoring",
-              "GPS tracking",
-              "Water resistant",
-              "7-day battery life"
-            ],
-            "specifications": {
-              "display": "1.4 inch AMOLED",
-              "battery": "7 days",
-              "water_resistance": "5ATM"
-            }
-          })
-        }
-      ]
-    }
-  ];
+// Get real products with metafields
+app.get('/api/products', authenticateShopify, async (req, res) => {
+  try {
+    const client = new shopify.clients.Rest({
+      session: { shop: req.shop, accessToken: req.accessToken }
+    });
 
-  res.json({
-    success: true,
-    products: mockProducts,
-    total: mockProducts.length
-  });
+    // First, get products with metafields
+    const response = await client.get({
+      path: 'products',
+      query: {
+        limit: 50,
+        fields: 'id,title,handle'
+      }
+    });
+
+    const products = response.body.products;
+    const productsWithSpecs = [];
+
+    // Check each product for custom.specification metafield
+    for (const product of products) {
+      try {
+        const metafieldResponse = await client.get({
+          path: `products/${product.id}/metafields`,
+          query: {
+            namespace: 'custom',
+            key: 'specification'
+          }
+        });
+
+        if (metafieldResponse.body.metafields && metafieldResponse.body.metafields.length > 0) {
+          productsWithSpecs.push({
+            id: product.id,
+            title: product.title,
+            handle: product.handle,
+            metafields: metafieldResponse.body.metafields
+          });
+        }
+      } catch (error) {
+        console.error(`Error fetching metafields for product ${product.id}:`, error);
+      }
+    }
+
+    res.json({
+      success: true,
+      products: productsWithSpecs,
+      total: productsWithSpecs.length,
+      message: `Found ${productsWithSpecs.length} products with custom.specification metafields`
+    });
+  } catch (error) {
+    console.error('Error fetching products:', error);
+    res.status(500).json({ error: 'Failed to fetch products' });
+  }
 });
 
-// Translation service using MyMemory API
+// Real Shopify API integration
+const { shopifyApi, LATEST_API_VERSION } = require('@shopify/shopify-api');
+
+// Initialize Shopify API
+const shopify = shopifyApi({
+  apiKey: process.env.SHOPIFY_API_KEY,
+  apiSecretKey: process.env.SHOPIFY_API_SECRET,
+  scopes: process.env.SHOPIFY_SCOPES?.split(',') || ['read_products', 'write_products'],
+  hostName: process.env.HOST?.replace(/https?:\/\//, '') || 'localhost',
+  apiVersion: LATEST_API_VERSION,
+  isEmbeddedApp: true,
+});
+
+// Authentication middleware
+const authenticateShopify = async (req, res, next) => {
+  try {
+    const shop = req.query.shop;
+    if (!shop) {
+      return res.status(400).json({ error: 'Shop parameter is required' });
+    }
+
+    // In a real app, you'd store and retrieve the access token from a database
+    // For this example, we'll use the session
+    const accessToken = req.session.accessToken;
+    
+    if (!accessToken) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    req.shopify = shopify;
+    req.shop = shop;
+    req.accessToken = accessToken;
+    next();
+  } catch (error) {
+    console.error('Authentication error:', error);
+    res.status(500).json({ error: 'Authentication failed' });
+  }
+};
+
+// OAuth callback
+app.get('/auth/callback', async (req, res) => {
+  try {
+    const { code, shop, state } = req.query;
+    
+    if (!code || !shop) {
+      return res.status(400).send('Missing required parameters');
+    }
+
+    // Exchange code for access token
+    const client = new shopify.clients.Rest({ session: { shop, accessToken: '' } });
+    const response = await client.post({
+      path: 'oauth/access_token',
+      data: {
+        client_id: process.env.SHOPIFY_API_KEY,
+        client_secret: process.env.SHOPIFY_API_SECRET,
+        code: code
+      }
+    });
+
+    const accessToken = response.body.access_token;
+    req.session.accessToken = accessToken;
+    req.session.shop = shop;
+
+    res.redirect(`/?shop=${shop}`);
+  } catch (error) {
+    console.error('OAuth callback error:', error);
+    res.status(500).send('Authentication failed');
+  }
+});
+
+// Install route
+app.get('/auth', (req, res) => {
+  const { shop } = req.query;
+  if (!shop) {
+    return res.status(400).send('Shop parameter is required');
+  }
+
+  const authUrl = shopify.auth.buildAuthURL({
+    shop,
+    redirectPath: '/auth/callback'
+  });
+
+  res.redirect(authUrl);
+});
 async function translateWithMyMemory(text, sourceLanguage, targetLanguage) {
   try {
     const response = await axios.get('https://api.mymemory.translated.net/get', {
@@ -145,59 +217,25 @@ async function translateJsonContent(jsonContent, sourceLanguage, targetLanguage)
   return jsonContent;
 }
 
-// Get specific product metafield
-app.get('/api/product/:id/metafield', (req, res) => {
+// Get specific product metafield from Shopify
+app.get('/api/product/:id/metafield', authenticateShopify, async (req, res) => {
   try {
     const { id } = req.params;
-    
-    // Mock metafield data based on product ID
-    const mockMetafields = {
-      1: {
-        id: 101,
-        namespace: "custom",
-        key: "specification",
-        value: JSON.stringify({
-          "title": "Premium Wireless Headphones",
-          "description": "High-quality wireless headphones with noise cancellation",
-          "features": [
-            "Active noise cancellation",
-            "30-hour battery life",
-            "Quick charge technology"
-          ],
-          "specifications": {
-            "driver_size": "40mm",
-            "frequency_response": "20Hz - 20kHz",
-            "impedance": "32 ohms"
-          }
-        })
-      },
-      2: {
-        id: 102,
-        namespace: "custom",
-        key: "specification",
-        value: JSON.stringify({
-          "title": "Smart Fitness Watch",
-          "description": "Track your fitness and stay connected",
-          "features": [
-            "Heart rate monitoring",
-            "GPS tracking",
-            "Water resistant",
-            "7-day battery life"
-          ],
-          "specifications": {
-            "display": "1.4 inch AMOLED",
-            "battery": "7 days",
-            "water_resistance": "5ATM"
-          }
-        })
-      }
-    };
+    const client = new shopify.clients.Rest({
+      session: { shop: req.shop, accessToken: req.accessToken }
+    });
 
-    const metafield = mockMetafields[id] || null;
+    const response = await client.get({
+      path: `products/${id}/metafields`,
+      query: {
+        namespace: 'custom',
+        key: 'specification'
+      }
+    });
 
     res.json({
       success: true,
-      metafield: metafield
+      metafield: response.body.metafields[0] || null
     });
   } catch (error) {
     console.error('Error fetching metafield:', error);
@@ -293,8 +331,8 @@ app.post('/api/translate', async (req, res) => {
   }
 });
 
-// Update metafield API endpoint (mock)
-app.put('/api/metafield/:id', (req, res) => {
+// Update metafield in Shopify
+app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
   try {
     const { id } = req.params;
     const { translatedContent } = req.body;
@@ -303,13 +341,24 @@ app.put('/api/metafield/:id', (req, res) => {
       return res.status(400).json({ error: 'Translated content is required' });
     }
 
-    // Mock successful update
+    const client = new shopify.clients.Rest({
+      session: { shop: req.shop, accessToken: req.accessToken }
+    });
+
+    const response = await client.put({
+      path: `metafields/${id}`,
+      data: {
+        metafield: {
+          id: id,
+          value: JSON.stringify(translatedContent)
+        }
+      }
+    });
+
     res.json({
       success: true,
-      metafield: {
-        id: id,
-        value: JSON.stringify(translatedContent)
-      }
+      metafield: response.body.metafield,
+      message: 'Metafield updated successfully in Shopify!'
     });
   } catch (error) {
     console.error('Error updating metafield:', error);
