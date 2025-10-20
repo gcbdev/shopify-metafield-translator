@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Metafield Translator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: #f6f6f7;
+            color: #333;
+        }
+        
+        .header {
+            background: white;
+            padding: 20px;
+            border-bottom: 1px solid #e1e3e5;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            color: #96bf48;
+            font-size: 24px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .controls {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+        
+        select, input {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        .btn {
+            background-color: #96bf48;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-right: 10px;
+        }
+        
+        .btn:hover {
+            background-color: #7ba83a;
+        }
+        
+        .btn-secondary {
+            background-color: #6b7280;
+        }
+        
+        .btn-secondary:hover {
+            background-color: #4b5563;
+        }
+        
+        .products-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        
+        .product-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            transition: box-shadow 0.2s;
+        }
+        
+        .product-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        
+        .product-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #1f2937;
+        }
+        
+        .product-handle {
+            color: #6b7280;
+            font-size: 14px;
+            margin-bottom: 15px;
+        }
+        
+        .metafield-preview {
+            background: #f9fafb;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 100px;
+            overflow-y: auto;
+            margin-bottom: 15px;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #6b7280;
+        }
+        
+        .error {
+            background: #fef2f2;
+            color: #dc2626;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        
+        .success {
+            background: #f0fdf4;
+            color: #16a34a;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+        }
+        
+        .modal-content {
+            background-color: white;
+            margin: 5% auto;
+            padding: 20px;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 800px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        
+        .close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        
+        .close:hover {
+            color: black;
+        }
+        
+        .json-editor {
+            width: 100%;
+            height: 300px;
+            font-family: monospace;
+            font-size: 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            padding: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="container">
+            <h1>Metafield Translator</h1>
+        </div>
+    </div>
+    
+    <div class="container">
+        <div id="error-message" class="error" style="display: none;"></div>
+        <div id="success-message" class="success" style="display: none;"></div>
+        
+        <div class="controls">
+            <div class="form-group">
+                <label for="target-language">Target Language:</label>
+                <select id="target-language">
+                    <option value="es">Spanish</option>
+                    <option value="fr">French</option>
+                    <option value="de">German</option>
+                    <option value="it">Italian</option>
+                    <option value="pt">Portuguese</option>
+                    <option value="ja">Japanese</option>
+                    <option value="ko">Korean</option>
+                    <option value="zh">Chinese</option>
+                </select>
+            </div>
+            <button class="btn" onclick="loadProducts()">Load Products</button>
+            <button class="btn btn-secondary" onclick="translateAll()">Translate All</button>
+        </div>
+        
+        <div id="products-container">
+            <div class="loading">Loading products...</div>
+        </div>
+    </div>
+    
+    <!-- Translation Modal -->
+    <div id="translation-modal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <h2>Translate Metafield</h2>
+            <div id="modal-product-info"></div>
+            <div class="form-group">
+                <label>Original Content:</label>
+                <textarea id="original-content" class="json-editor" readonly></textarea>
+            </div>
+            <div class="form-group">
+                <label>Translated Content:</label>
+                <textarea id="translated-content" class="json-editor"></textarea>
+            </div>
+            <button class="btn" onclick="saveTranslation()">Save Translation</button>
+            <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        </div>
+    </div>
+    
+    <script>
+        let products = [];
+        let currentProduct = null;
+        let currentMetafieldId = null;
+        
+        // Get URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const shop = urlParams.get('shop');
+        
+        // Load products on page load
+        window.onload = function() {
+            if (shop) {
+                loadProducts();
+            }
+        };
+        
+        async function loadProducts() {
+            try {
+                showLoading();
+                const response = await fetch(`/api/products?shop=${shop}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    products = data.products;
+                    displayProducts();
+                } else {
+                    showError('Failed to load products');
+                }
+            } catch (error) {
+                console.error('Error loading products:', error);
+                showError('Error loading products');
+            }
+        }
+        
+        function displayProducts() {
+            const container = document.getElementById('products-container');
+            
+            if (products.length === 0) {
+                container.innerHTML = '<div class="loading">No products with custom.specification metafield found.</div>';
+                return;
+            }
+            
+            container.innerHTML = `
+                <div class="products-grid">
+                    ${products.map(product => `
+                        <div class="product-card">
+                            <div class="product-title">${product.title}</div>
+                            <div class="product-handle">${product.handle}</div>
+                            <div class="metafield-preview">${getMetafieldPreview(product)}</div>
+                            <button class="btn" onclick="translateProduct(${product.id})">Translate</button>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+        
+        function getMetafieldPreview(product) {
+            const metafield = product.metafields?.find(m => m.namespace === 'custom' && m.key === 'specification');
+            if (metafield) {
+                try {
+                    const json = JSON.parse(metafield.value);
+                    return JSON.stringify(json, null, 2).substring(0, 200) + '...';
+                } catch (e) {
+                    return metafield.value.substring(0, 200) + '...';
+                }
+            }
+            return 'No metafield found';
+        }
+        
+        async function translateProduct(productId) {
+            try {
+                const targetLanguage = document.getElementById('target-language').value;
+                
+                const response = await fetch('/api/translate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        productId: productId,
+                        targetLanguage: targetLanguage,
+                        sourceLanguage: 'en'
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    currentProduct = productId;
+                    currentMetafieldId = data.metafieldId;
+                    
+                    document.getElementById('modal-product-info').innerHTML = `
+                        <p><strong>Product ID:</strong> ${productId}</p>
+                        <p><strong>Target Language:</strong> ${targetLanguage}</p>
+                    `;
+                    
+                    document.getElementById('original-content').value = JSON.stringify(data.originalContent, null, 2);
+                    document.getElementById('translated-content').value = JSON.stringify(data.translatedContent, null, 2);
+                    
+                    document.getElementById('translation-modal').style.display = 'block';
+                } else {
+                    showError(data.error || 'Translation failed');
+                }
+            } catch (error) {
+                console.error('Translation error:', error);
+                showError('Translation failed');
+            }
+        }
+        
+        async function saveTranslation() {
+            try {
+                const translatedContent = document.getElementById('translated-content').value;
+                
+                // Validate JSON
+                JSON.parse(translatedContent);
+                
+                const response = await fetch(`/api/metafield/${currentMetafieldId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        translatedContent: JSON.parse(translatedContent)
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showSuccess('Metafield updated successfully!');
+                    closeModal();
+                    loadProducts(); // Refresh the list
+                } else {
+                    showError(data.error || 'Failed to update metafield');
+                }
+            } catch (error) {
+                if (error instanceof SyntaxError) {
+                    showError('Invalid JSON format');
+                } else {
+                    console.error('Save error:', error);
+                    showError('Failed to save translation');
+                }
+            }
+        }
+        
+        async function translateAll() {
+            const targetLanguage = document.getElementById('target-language').value;
+            
+            for (const product of products) {
+                try {
+                    await translateProduct(product.id);
+                    // In a real app, you might want to batch these requests
+                    await new Promise(resolve => setTimeout(resolve, 1000)); // Rate limiting
+                } catch (error) {
+                    console.error(`Error translating product ${product.id}:`, error);
+                }
+            }
+            
+            showSuccess('Bulk translation completed!');
+        }
+        
+        function closeModal() {
+            document.getElementById('translation-modal').style.display = 'none';
+        }
+        
+        function showLoading() {
+            document.getElementById('products-container').innerHTML = '<div class="loading">Loading...</div>';
+        }
+        
+        function showError(message) {
+            const errorDiv = document.getElementById('error-message');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            setTimeout(() => {
+                errorDiv.style.display = 'none';
+            }, 5000);
+        }
+        
+        function showSuccess(message) {
+            const successDiv = document.getElementById('success-message');
+            successDiv.textContent = message;
+            successDiv.style.display = 'block';
+            setTimeout(() => {
+                successDiv.style.display = 'none';
+            }, 5000);
+        }
+        
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('translation-modal');
+            if (event.target === modal) {
+                closeModal();
+            }
+        }
+    </script>
+</body>
+</html>

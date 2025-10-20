@@ -1,0 +1,24 @@
+{
+  "name": "Metafield Translator",
+  "client_id": "816678fd4b1090ece40548e15b569dd5",
+  "application_url": "https://your-app-domain.com",
+  "embedded": true,
+  "webhook_api_version": "2023-10",
+  "pos": {
+    "embedded": false
+  },
+  "access_scopes": [
+    "read_products",
+    "write_products",
+    "read_product_listings",
+    "write_product_listings"
+  ],
+  "app_proxy": {
+    "url": "https://your-app-domain.com",
+    "subpath": "apps/metafield-translator",
+    "subpath_prefix": "metafield-translator"
+  },
+  "app_configuration": {
+    "embedded": true
+  }
+}
