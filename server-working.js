@@ -234,7 +234,7 @@ app.post('/api/test-translate', async (req, res) => {
       translatedContent: translatedContent,
       metafieldId: metafield.id,
       isTest: true,
-      message: 'This is a test translation. Click "Make Live Translation" to apply it to the product.'
+      message: 'This is a test translation. Click "Save Translation" to apply it to the product.'
     });
   } catch (error) {
     console.error('Test translation error:', error);

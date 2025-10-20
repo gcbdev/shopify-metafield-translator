@@ -241,8 +241,9 @@
                 <label>Translated Content:</label>
                 <textarea id="translated-content" class="json-editor"></textarea>
             </div>
-            <button class="btn" onclick="saveTranslation()">Save Translation</button>
+            <button class="btn" onclick="saveTranslation()" id="save-btn">Save Translation</button>
             <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+            <button class="btn" onclick="promoteTestToLive()" id="promote-btn" style="display: none; background-color: #16a34a;">Make Live Translation</button>
         </div>
     </div>
     
@@ -295,7 +296,8 @@
                             <div class="product-title">${product.title}</div>
                             <div class="product-handle">${product.handle}</div>
                             <div class="metafield-preview">${getMetafieldPreview(product)}</div>
-                            <button class="btn" onclick="translateProduct(${product.id})">Translate</button>
+                            <button class="btn" onclick="testTranslateProduct(${product.id})">Test Translation</button>
+                            <button class="btn btn-secondary" onclick="translateProduct(${product.id})">Translate & Save</button>
                         </div>
                     `).join('')}
                 </div>
@@ -315,6 +317,54 @@
             return 'No metafield found';
         }
         
+        async function testTranslateProduct(productId) {
+            try {
+                const targetLanguage = document.getElementById('target-language').value;
+                
+                const response = await fetch('/api/test-translate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        productId: productId,
+                        targetLanguage: targetLanguage,
+                        sourceLanguage: 'en'
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    currentProduct = productId;
+                    currentMetafieldId = data.metafieldId;
+                    
+                    document.getElementById('modal-product-info').innerHTML = `
+                        <p><strong>Product ID:</strong> ${productId}</p>
+                        <p><strong>Target Language:</strong> ${targetLanguage}</p>
+                        <p><strong>Mode:</strong> <span style="color: #f59e0b;">TEST MODE</span></p>
+                    `;
+                    
+                    document.getElementById('original-content').value = JSON.stringify(data.originalContent, null, 2);
+                    document.getElementById('translated-content').value = JSON.stringify(data.translatedContent, null, 2);
+                    
+                    // Disable editing in test mode
+                    document.getElementById('translated-content').readOnly = true;
+                    
+                    // Show promote button, hide save button
+                    document.getElementById('promote-btn').style.display = 'inline-block';
+                    document.getElementById('save-btn').style.display = 'none';
+                    
+                    document.getElementById('translation-modal').style.display = 'block';
+                } else {
+                    showError(data.error || 'Test translation failed');
+                }
+            } catch (error) {
+                console.error('Test translation error:', error);
+                showError('Test translation failed');
+            }
+        }
+
         async function translateProduct(productId) {
             try {
                 const targetLanguage = document.getElementById('target-language').value;
@@ -340,10 +390,18 @@
                     document.getElementById('modal-product-info').innerHTML = `
                         <p><strong>Product ID:</strong> ${productId}</p>
                         <p><strong>Target Language:</strong> ${targetLanguage}</p>
+                        <p><strong>Mode:</strong> <span style="color: #16a34a;">LIVE MODE</span></p>
                     `;
                     
                     document.getElementById('original-content').value = JSON.stringify(data.originalContent, null, 2);
                     document.getElementById('translated-content').value = JSON.stringify(data.translatedContent, null, 2);
+                    
+                    // Enable editing in live mode
+                    document.getElementById('translated-content').readOnly = false;
+                    
+                    // Show save button, hide promote button
+                    document.getElementById('save-btn').style.display = 'inline-block';
+                    document.getElementById('promote-btn').style.display = 'none';
                     
                     document.getElementById('translation-modal').style.display = 'block';
                 } else {
@@ -388,6 +446,50 @@
                     console.error('Save error:', error);
                     showError('Failed to save translation');
                 }
+            }
+        }
+
+        async function promoteTestToLive() {
+            try {
+                const targetLanguage = document.getElementById('target-language').value;
+                
+                // Call the live translation API
+                const response = await fetch('/api/translate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        productId: currentProduct,
+                        targetLanguage: targetLanguage,
+                        sourceLanguage: 'en'
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Update the modal with live translation
+                    document.getElementById('modal-product-info').innerHTML = `
+                        <p><strong>Product ID:</strong> ${currentProduct}</p>
+                        <p><strong>Target Language:</strong> ${targetLanguage}</p>
+                        <p><strong>Mode:</strong> <span style="color: #16a34a;">LIVE MODE</span></p>
+                    `;
+                    
+                    document.getElementById('translated-content').value = JSON.stringify(data.translatedContent, null, 2);
+                    document.getElementById('translated-content').readOnly = false;
+                    
+                    // Hide promote button, show save button
+                    document.getElementById('promote-btn').style.display = 'none';
+                    document.getElementById('save-btn').style.display = 'inline-block';
+                    
+                    showSuccess('Test translation promoted to live mode! You can now edit and save.');
+                } else {
+                    showError(data.error || 'Failed to promote test translation');
+                }
+            } catch (error) {
+                console.error('Promote error:', error);
+                showError('Failed to promote test translation');
             }
         }
         
