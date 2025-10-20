@@ -33,42 +33,67 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Get real products with metafields
+// Real Shopify API integration using REST API directly
+const authenticateShopify = async (req, res, next) => {
+  try {
+    const shop = req.query.shop;
+    if (!shop) {
+      return res.status(400).json({ error: 'Shop parameter is required' });
+    }
+
+    // Use your actual API credentials
+    req.shop = shop;
+    req.apiKey = process.env.SHOPIFY_API_KEY;
+    req.apiSecret = process.env.SHOPIFY_API_SECRET;
+    next();
+  } catch (error) {
+    console.error('Authentication error:', error);
+    res.status(500).json({ error: 'Authentication failed' });
+  }
+};
+
+// Get real products from your Shopify store
 app.get('/api/products', authenticateShopify, async (req, res) => {
   try {
-    const client = new shopify.clients.Rest({
-      session: { shop: req.shop, accessToken: req.accessToken }
-    });
+    const shop = req.shop;
+    const apiKey = req.apiKey;
+    const apiSecret = req.apiSecret;
 
-    // First, get products with metafields
-    const response = await client.get({
-      path: 'products',
-      query: {
+    // Get products from your store
+    const response = await axios.get(`https://${shop}/admin/api/2023-10/products.json`, {
+      headers: {
+        'X-Shopify-Access-Token': apiSecret, // Using API secret as access token for now
+        'Content-Type': 'application/json'
+      },
+      params: {
         limit: 50,
         fields: 'id,title,handle'
       }
     });
 
-    const products = response.body.products;
+    const products = response.data.products;
     const productsWithSpecs = [];
 
     // Check each product for custom.specification metafield
     for (const product of products) {
       try {
-        const metafieldResponse = await client.get({
-          path: `products/${product.id}/metafields`,
-          query: {
+        const metafieldResponse = await axios.get(`https://${shop}/admin/api/2023-10/products/${product.id}/metafields.json`, {
+          headers: {
+            'X-Shopify-Access-Token': apiSecret,
+            'Content-Type': 'application/json'
+          },
+          params: {
             namespace: 'custom',
             key: 'specification'
           }
         });
 
-        if (metafieldResponse.body.metafields && metafieldResponse.body.metafields.length > 0) {
+        if (metafieldResponse.data.metafields && metafieldResponse.data.metafields.length > 0) {
           productsWithSpecs.push({
             id: product.id,
             title: product.title,
             handle: product.handle,
-            metafields: metafieldResponse.body.metafields
+            metafields: metafieldResponse.data.metafields
           });
         }
       } catch (error) {
@@ -80,97 +105,27 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
       success: true,
       products: productsWithSpecs,
       total: productsWithSpecs.length,
-      message: `Found ${productsWithSpecs.length} products with custom.specification metafields`
+      message: `Found ${productsWithSpecs.length} products with custom.specification metafields from ${shop}`
     });
   } catch (error) {
     console.error('Error fetching products:', error);
-    res.status(500).json({ error: 'Failed to fetch products' });
-  }
-});
-
-// Real Shopify API integration
-const { shopifyApi, LATEST_API_VERSION } = require('@shopify/shopify-api');
-
-// Initialize Shopify API
-const shopify = shopifyApi({
-  apiKey: process.env.SHOPIFY_API_KEY,
-  apiSecretKey: process.env.SHOPIFY_API_SECRET,
-  scopes: process.env.SHOPIFY_SCOPES?.split(',') || ['read_products', 'write_products'],
-  hostName: process.env.HOST?.replace(/https?:\/\//, '') || 'localhost',
-  apiVersion: LATEST_API_VERSION,
-  isEmbeddedApp: true,
-});
-
-// Authentication middleware
-const authenticateShopify = async (req, res, next) => {
-  try {
-    const shop = req.query.shop;
-    if (!shop) {
-      return res.status(400).json({ error: 'Shop parameter is required' });
-    }
-
-    // In a real app, you'd store and retrieve the access token from a database
-    // For this example, we'll use the session
-    const accessToken = req.session.accessToken;
-    
-    if (!accessToken) {
-      return res.status(401).json({ error: 'Not authenticated' });
-    }
-
-    req.shopify = shopify;
-    req.shop = shop;
-    req.accessToken = accessToken;
-    next();
-  } catch (error) {
-    console.error('Authentication error:', error);
-    res.status(500).json({ error: 'Authentication failed' });
-  }
-};
-
-// OAuth callback
-app.get('/auth/callback', async (req, res) => {
-  try {
-    const { code, shop, state } = req.query;
-    
-    if (!code || !shop) {
-      return res.status(400).send('Missing required parameters');
-    }
-
-    // Exchange code for access token
-    const client = new shopify.clients.Rest({ session: { shop, accessToken: '' } });
-    const response = await client.post({
-      path: 'oauth/access_token',
-      data: {
-        client_id: process.env.SHOPIFY_API_KEY,
-        client_secret: process.env.SHOPIFY_API_SECRET,
-        code: code
-      }
+    res.status(500).json({ 
+      error: 'Failed to fetch products',
+      details: error.message,
+      shop: req.shop
     });
-
-    const accessToken = response.body.access_token;
-    req.session.accessToken = accessToken;
-    req.session.shop = shop;
-
-    res.redirect(`/?shop=${shop}`);
-  } catch (error) {
-    console.error('OAuth callback error:', error);
-    res.status(500).send('Authentication failed');
   }
 });
 
-// Install route
+// Install route for your store
 app.get('/auth', (req, res) => {
   const { shop } = req.query;
   if (!shop) {
     return res.status(400).send('Shop parameter is required');
   }
 
-  const authUrl = shopify.auth.buildAuthURL({
-    shop,
-    redirectPath: '/auth/callback'
-  });
-
-  res.redirect(authUrl);
+  // Redirect to main app with shop parameter
+  res.redirect(`/?shop=${shop}`);
 });
 async function translateWithMyMemory(text, sourceLanguage, targetLanguage) {
   try {
@@ -217,17 +172,19 @@ async function translateJsonContent(jsonContent, sourceLanguage, targetLanguage)
   return jsonContent;
 }
 
-// Get specific product metafield from Shopify
+// Get specific product metafield from your Shopify store
 app.get('/api/product/:id/metafield', authenticateShopify, async (req, res) => {
   try {
     const { id } = req.params;
-    const client = new shopify.clients.Rest({
-      session: { shop: req.shop, accessToken: req.accessToken }
-    });
+    const shop = req.shop;
+    const apiSecret = req.apiSecret;
 
-    const response = await client.get({
-      path: `products/${id}/metafields`,
-      query: {
+    const response = await axios.get(`https://${shop}/admin/api/2023-10/products/${id}/metafields.json`, {
+      headers: {
+        'X-Shopify-Access-Token': apiSecret,
+        'Content-Type': 'application/json'
+      },
+      params: {
         namespace: 'custom',
         key: 'specification'
       }
@@ -235,7 +192,7 @@ app.get('/api/product/:id/metafield', authenticateShopify, async (req, res) => {
 
     res.json({
       success: true,
-      metafield: response.body.metafields[0] || null
+      metafield: response.data.metafields[0] || null
     });
   } catch (error) {
     console.error('Error fetching metafield:', error);
@@ -331,34 +288,34 @@ app.post('/api/translate', async (req, res) => {
   }
 });
 
-// Update metafield in Shopify
+// Update metafield in your Shopify store
 app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
   try {
     const { id } = req.params;
     const { translatedContent } = req.body;
+    const shop = req.shop;
+    const apiSecret = req.apiSecret;
 
     if (!translatedContent) {
       return res.status(400).json({ error: 'Translated content is required' });
     }
 
-    const client = new shopify.clients.Rest({
-      session: { shop: req.shop, accessToken: req.accessToken }
-    });
-
-    const response = await client.put({
-      path: `metafields/${id}`,
-      data: {
-        metafield: {
-          id: id,
-          value: JSON.stringify(translatedContent)
-        }
+    const response = await axios.put(`https://${shop}/admin/api/2023-10/metafields/${id}.json`, {
+      metafield: {
+        id: id,
+        value: JSON.stringify(translatedContent)
+      }
+    }, {
+      headers: {
+        'X-Shopify-Access-Token': apiSecret,
+        'Content-Type': 'application/json'
       }
     });
 
     res.json({
       success: true,
-      metafield: response.body.metafield,
-      message: 'Metafield updated successfully in Shopify!'
+      metafield: response.data.metafield,
+      message: 'Metafield updated successfully in your Shopify store!'
     });
   } catch (error) {
     console.error('Error updating metafield:', error);
