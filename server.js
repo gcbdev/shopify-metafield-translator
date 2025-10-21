@@ -30,7 +30,7 @@ app.use(session({
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Main app route
+// Main app route - redirect to install if no shop parameter
 app.get('/', (req, res) => {
   const { shop } = req.query;
   
@@ -38,7 +38,7 @@ app.get('/', (req, res) => {
     return res.sendFile(path.join(__dirname, 'public', 'install.html'));
   }
 
-  // Show the main interface
+  // For now, show the main interface
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
@@ -49,37 +49,6 @@ app.get('/health', (req, res) => {
     message: 'App is running',
     timestamp: new Date().toISOString()
   });
-});
-
-// Test authentication endpoint
-app.get('/api/test-auth', authenticateShopify, async (req, res) => {
-  try {
-    const shop = req.shop;
-    const accessToken = req.accessToken;
-    
-    // Test API call to verify authentication
-    const response = await axios.get(`https://${shop}/admin/api/2023-10/shop.json`, {
-      headers: {
-        'X-Shopify-Access-Token': accessToken,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    res.json({
-      success: true,
-      message: 'Authentication successful',
-      shop: shop,
-      shopData: response.data.shop
-    });
-  } catch (error) {
-    console.error('Auth test error:', error.response?.data || error.message);
-    res.status(500).json({
-      success: false,
-      error: 'Authentication failed',
-      details: error.response?.data || error.message,
-      status: error.response?.status
-    });
-  }
 });
 
 // Simple authentication middleware using API credentials
@@ -111,8 +80,6 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
     const safeLimit = Math.min(Math.max(limit, 1), maxLimit);
     const accessToken = req.accessToken;
 
-    console.log(`Fetching products from ${shop} with token: ${accessToken.substring(0, 10)}...`);
-
     // Get products from your store
     const response = await axios.get(`https://${shop}/admin/api/2023-10/products.json`, {
       headers: {
@@ -124,8 +91,6 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
         fields: 'id,title,handle'
       }
     });
-
-    console.log(`Successfully fetched ${response.data.products.length} products from Shopify`);
 
     const products = response.data.products;
     const productsWithSpecs = [];
@@ -153,11 +118,9 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
           });
         }
       } catch (error) {
-        console.error(`Error fetching metafields for product ${product.id}:`, error.message);
+        console.error(`Error fetching metafields for product ${product.id}:`, error);
       }
     }
-
-    console.log(`Found ${productsWithSpecs.length} products with custom.specification metafields`);
 
     res.json({
       success: true,
@@ -167,42 +130,17 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
       message: `Found ${productsWithSpecs.length} products with custom.specification metafields from ${shop}. Use ?limit=X to control how many products to display.`
     });
   } catch (error) {
-    console.error('Error fetching products:', error.response?.data || error.message);
+    console.error('Error fetching products:', error);
     res.status(500).json({ 
       error: 'Failed to fetch products',
-      details: error.response?.data || error.message,
-      shop: req.shop,
-      status: error.response?.status
+      details: error.message,
+      shop: req.shop
     });
   }
 });
 
-// OAuth callback route
-app.get('/auth/callback', async (req, res) => {
-  try {
-    const { code, shop, state } = req.query;
-    
-    if (!code || !shop) {
-      return res.status(400).send('Missing required parameters');
-    }
-
-    // Exchange code for access token
-    const response = await axios.post(`https://${shop}/admin/oauth/access_token`, {
-      client_id: process.env.SHOPIFY_API_KEY,
-      client_secret: process.env.SHOPIFY_API_SECRET,
-      code: code
-    });
-
-    const accessToken = response.data.access_token;
-    req.session.accessToken = accessToken;
-    req.session.shop = shop;
-
-    res.redirect(`/?shop=${shop}`);
-  } catch (error) {
-    console.error('OAuth callback error:', error);
-    res.status(500).send('Authentication failed');
-  }
-});
+// OAuth callback route (removed as we are using direct API access for now)
+// app.get('/auth/callback', async (req, res) => { ... });
 
 // Translation service using MyMemory API
 async function translateWithMyMemory(text, sourceLanguage, targetLanguage) {
@@ -282,7 +220,7 @@ app.get('/api/product/:id/metafield', authenticateShopify, async (req, res) => {
 app.post('/api/test-translate', async (req, res) => {
   try {
     const { productId, targetLanguage, sourceLanguage = 'en' } = req.body;
-    const shop = req.query.shop;
+    const shop = req.query.shop; // Get shop from query for this endpoint
 
     if (!productId || !targetLanguage) {
       return res.status(400).json({ error: 'Product ID and target language are required' });
@@ -331,7 +269,7 @@ app.post('/api/test-translate', async (req, res) => {
 app.post('/api/translate', async (req, res) => {
   try {
     const { productId, targetLanguage, sourceLanguage = 'en' } = req.body;
-    const shop = req.query.shop;
+    const shop = req.query.shop; // Get shop from query for this endpoint
 
     if (!productId || !targetLanguage) {
       return res.status(400).json({ error: 'Product ID and target language are required' });
