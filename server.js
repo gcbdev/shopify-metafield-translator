@@ -170,8 +170,57 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
 // OAuth callback route (removed as we are using direct API access for now)
 // app.get('/auth/callback', async (req, res) => { ... });
 
-// Translation service using MyMemory API
-async function translateWithMyMemory(text, sourceLanguage, targetLanguage) {
+// Translation service using multiple free APIs
+async function translateText(text, sourceLanguage, targetLanguage) {
+  // Try Google Translate first (free tier: 500,000 characters/month)
+  try {
+    console.log(`Translating "${text}" from ${sourceLanguage} to ${targetLanguage}`);
+    
+    // Google Translate API (free tier)
+    const response = await axios.post('https://translate.googleapis.com/translate_a/single', null, {
+      params: {
+        client: 'gtx',
+        sl: sourceLanguage,
+        tl: targetLanguage,
+        dt: 't',
+        q: text
+      },
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      }
+    });
+
+    if (response.data && response.data[0] && response.data[0][0]) {
+      const translatedText = response.data[0][0][0];
+      console.log(`✅ Google Translate: "${text}" → "${translatedText}"`);
+      return translatedText;
+    }
+  } catch (error) {
+    console.log('Google Translate failed, trying LibreTranslate...');
+  }
+
+  // Fallback to LibreTranslate (completely free)
+  try {
+    const response = await axios.post('https://libretranslate.de/translate', {
+      q: text,
+      source: sourceLanguage,
+      target: targetLanguage,
+      format: 'text'
+    }, {
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (response.data && response.data.translatedText) {
+      console.log(`✅ LibreTranslate: "${text}" → "${response.data.translatedText}"`);
+      return response.data.translatedText;
+    }
+  } catch (error) {
+    console.log('LibreTranslate failed, trying MyMemory...');
+  }
+
+  // Fallback to MyMemory
   try {
     const response = await axios.get('https://api.mymemory.translated.net/get', {
       params: {
@@ -181,20 +230,22 @@ async function translateWithMyMemory(text, sourceLanguage, targetLanguage) {
     });
 
     if (response.data.responseStatus === 200) {
+      console.log(`✅ MyMemory: "${text}" → "${response.data.responseData.translatedText}"`);
       return response.data.responseData.translatedText;
-    } else {
-      throw new Error('Translation failed');
     }
   } catch (error) {
-    console.error('Translation error:', error);
-    return `[${targetLanguage.toUpperCase()}] ${text}`;
+    console.log('MyMemory failed, using fallback...');
   }
+
+  // Final fallback - return original text with language tag
+  console.log(`❌ All translation services failed for: "${text}"`);
+  return `[${targetLanguage.toUpperCase()}] ${text}`;
 }
 
 // Translate JSON content
 async function translateJsonContent(jsonContent, sourceLanguage, targetLanguage) {
   if (typeof jsonContent === 'string') {
-    return await translateWithMyMemory(jsonContent, sourceLanguage, targetLanguage);
+    return await translateText(jsonContent, sourceLanguage, targetLanguage);
   } else if (Array.isArray(jsonContent)) {
     return await Promise.all(
       jsonContent.map(item => translateJsonContent(item, sourceLanguage, targetLanguage))
