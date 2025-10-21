@@ -318,6 +318,30 @@ app.get('/api/product/:id/metafield', authenticateShopify, async (req, res) => {
   }
 });
 
+// Get specific metafield by ID (for frontend compatibility)
+app.get('/api/metafield/:id', authenticateShopify, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const shop = req.shop;
+    const accessToken = req.accessToken;
+
+    const response = await axios.get(`https://${shop}/admin/api/2023-10/metafields/${id}.json`, {
+      headers: {
+        'X-Shopify-Access-Token': accessToken,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    res.json({
+      success: true,
+      metafield: response.data.metafield
+    });
+  } catch (error) {
+    console.error('Error fetching metafield by ID:', error);
+    res.status(500).json({ error: 'Failed to fetch metafield' });
+  }
+});
+
 // Test translation API endpoint (preview only)
 app.post('/api/test-translate', async (req, res) => {
   try {
