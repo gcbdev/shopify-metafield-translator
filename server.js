@@ -428,6 +428,10 @@ app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
       return res.status(400).json({ error: 'Translated content and product ID are required' });
     }
 
+    console.log('Creating French translation for metafield:', id);
+    console.log('Product ID:', productId);
+    console.log('Translated content preview:', JSON.stringify(translatedContent).substring(0, 200) + '...');
+
     // Use Shopify's translation API to create French translation for Translate & Adapt
     const response = await axios.post(`https://${shop}/admin/api/2023-10/translations.json`, {
       translation: {
@@ -449,8 +453,15 @@ app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
       message: 'French translation added to Translate & Adapt French column!'
     });
   } catch (error) {
-    console.error('Error creating French translation:', error);
-    res.status(500).json({ error: 'Failed to create French translation' });
+    console.error('Error creating French translation:', error.response?.data || error.message);
+    console.error('Error status:', error.response?.status);
+    console.error('Error details:', error.response?.data);
+    
+    res.status(500).json({ 
+      error: 'Failed to create French translation',
+      details: error.response?.data || error.message,
+      status: error.response?.status
+    });
   }
 });
 
