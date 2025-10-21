@@ -51,7 +51,7 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Simple authentication middleware
+// Authentication middleware with proper OAuth
 const authenticateShopify = async (req, res, next) => {
   try {
     const shop = req.query.shop;
@@ -59,13 +59,19 @@ const authenticateShopify = async (req, res, next) => {
       return res.status(400).json({ error: 'Shop parameter is required' });
     }
 
-    // For now, we'll use a mock approach since we don't have OAuth set up
+    // Check if we have a valid access token in session
+    const accessToken = req.session.accessToken;
+    
+    if (!accessToken) {
+      // Redirect to OAuth flow
+      const authUrl = `https://${shop}/admin/oauth/authorize?client_id=${process.env.SHOPIFY_API_KEY}&scope=read_products,write_products,read_product_listings,write_product_listings&redirect_uri=${encodeURIComponent(process.env.HOST + '/auth/callback')}&state=${shop}`;
+      return res.redirect(authUrl);
+    }
+
     req.shop = shop;
+    req.accessToken = accessToken;
     req.apiKey = process.env.SHOPIFY_API_KEY;
     req.apiSecret = process.env.SHOPIFY_API_SECRET;
-    
-    // Mock authentication for testing
-    req.isAuthenticated = true;
     next();
   } catch (error) {
     console.error('Authentication error:', error);
@@ -77,12 +83,12 @@ const authenticateShopify = async (req, res, next) => {
 app.get('/api/products', authenticateShopify, async (req, res) => {
   try {
     const shop = req.shop;
-    const apiSecret = req.apiSecret;
+    const accessToken = req.accessToken;
 
     // Get products from your store
     const response = await axios.get(`https://${shop}/admin/api/2023-10/products.json`, {
       headers: {
-        'X-Shopify-Access-Token': apiSecret,
+        'X-Shopify-Access-Token': accessToken,
         'Content-Type': 'application/json'
       },
       params: {
@@ -99,7 +105,7 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
       try {
         const metafieldResponse = await axios.get(`https://${shop}/admin/api/2023-10/products/${product.id}/metafields.json`, {
           headers: {
-            'X-Shopify-Access-Token': apiSecret,
+            'X-Shopify-Access-Token': accessToken,
             'Content-Type': 'application/json'
           },
           params: {
@@ -137,15 +143,31 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
   }
 });
 
-// Install route for your store
-app.get('/auth', (req, res) => {
-  const { shop } = req.query;
-  if (!shop) {
-    return res.status(400).send('Shop parameter is required');
-  }
+// OAuth callback route
+app.get('/auth/callback', async (req, res) => {
+  try {
+    const { code, shop, state } = req.query;
+    
+    if (!code || !shop) {
+      return res.status(400).send('Missing required parameters');
+    }
 
-  // Redirect to main app with shop parameter
-  res.redirect(`/?shop=${shop}`);
+    // Exchange code for access token
+    const response = await axios.post(`https://${shop}/admin/oauth/access_token`, {
+      client_id: process.env.SHOPIFY_API_KEY,
+      client_secret: process.env.SHOPIFY_API_SECRET,
+      code: code
+    });
+
+    const accessToken = response.data.access_token;
+    req.session.accessToken = accessToken;
+    req.session.shop = shop;
+
+    res.redirect(`/?shop=${shop}`);
+  } catch (error) {
+    console.error('OAuth callback error:', error);
+    res.status(500).send('Authentication failed');
+  }
 });
 
 // Translation service using MyMemory API
@@ -199,11 +221,11 @@ app.get('/api/product/:id/metafield', authenticateShopify, async (req, res) => {
   try {
     const { id } = req.params;
     const shop = req.shop;
-    const apiSecret = req.apiSecret;
+    const accessToken = req.accessToken;
 
     const response = await axios.get(`https://${shop}/admin/api/2023-10/products/${id}/metafields.json`, {
       headers: {
-        'X-Shopify-Access-Token': apiSecret,
+        'X-Shopify-Access-Token': accessToken,
         'Content-Type': 'application/json'
       },
       params: {
@@ -316,7 +338,7 @@ app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
     const { id } = req.params;
     const { translatedContent } = req.body;
     const shop = req.shop;
-    const apiSecret = req.apiSecret;
+    const accessToken = req.accessToken;
 
     if (!translatedContent) {
       return res.status(400).json({ error: 'Translated content is required' });
@@ -329,7 +351,7 @@ app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
       }
     }, {
       headers: {
-        'X-Shopify-Access-Token': apiSecret,
+        'X-Shopify-Access-Token': accessToken,
         'Content-Type': 'application/json'
       }
     });
