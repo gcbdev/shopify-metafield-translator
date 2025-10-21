@@ -416,22 +416,25 @@ app.post('/api/translate', async (req, res) => {
   }
 });
 
-// Update metafield in your Shopify store
+// Create or update translation metafield (separate from original)
 app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
   try {
     const { id } = req.params;
-    const { translatedContent } = req.body;
+    const { translatedContent, productId } = req.body;
     const shop = req.shop;
     const accessToken = req.accessToken;
 
-    if (!translatedContent) {
-      return res.status(400).json({ error: 'Translated content is required' });
+    if (!translatedContent || !productId) {
+      return res.status(400).json({ error: 'Translated content and product ID are required' });
     }
 
-    const response = await axios.put(`https://${shop}/admin/api/2023-10/metafields/${id}.json`, {
+    // Create a new metafield for translations instead of updating the original
+    const response = await axios.post(`https://${shop}/admin/api/2023-10/products/${productId}/metafields.json`, {
       metafield: {
-        id: id,
-        value: JSON.stringify(translatedContent)
+        namespace: 'custom',
+        key: 'specification_translated',
+        value: JSON.stringify(translatedContent),
+        type: 'json'
       }
     }, {
       headers: {
@@ -443,11 +446,11 @@ app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
     res.json({
       success: true,
       metafield: response.data.metafield,
-      message: 'Metafield updated successfully in your Shopify store!'
+      message: 'Translation metafield created successfully! Original metafield preserved.'
     });
   } catch (error) {
-    console.error('Error updating metafield:', error);
-    res.status(500).json({ error: 'Failed to update metafield' });
+    console.error('Error creating translation metafield:', error);
+    res.status(500).json({ error: 'Failed to create translation metafield' });
   }
 });
 
