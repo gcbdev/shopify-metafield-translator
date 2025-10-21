@@ -202,8 +202,18 @@ async function translateJsonContent(jsonContent, sourceLanguage, targetLanguage)
   } else if (jsonContent && typeof jsonContent === 'object') {
     const translated = {};
     for (const [key, value] of Object.entries(jsonContent)) {
-      // Skip technical fields
-      if (['id', 'sku', 'barcode', 'ean', 'upc', 'isbn', 'asin', 'url', 'link', 'image', 'images', 'video', 'videos', 'price', 'cost', 'weight', 'dimensions', 'size', 'color_code', 'hex', 'rgb', 'hsl', 'date', 'time', 'timestamp', 'created_at', 'updated_at', 'status', 'type', 'category', 'tags', 'keywords'].some(skipKey => 
+      // Skip technical fields but allow Brand, Type, Compatibility to be translated
+      const skipFields = ['id', 'sku', 'barcode', 'ean', 'upc', 'isbn', 'asin', 'url', 'link', 'image', 'images', 'video', 'videos', 'price', 'cost', 'weight', 'dimensions', 'size', 'color_code', 'hex', 'rgb', 'hsl', 'date', 'time', 'timestamp', 'created_at', 'updated_at', 'status', 'category', 'tags', 'keywords'];
+      
+      // Always translate Brand, Type, Compatibility fields
+      const alwaysTranslateFields = ['brand', 'type', 'compatibility'];
+      
+      if (alwaysTranslateFields.some(translateKey => 
+        key.toLowerCase().includes(translateKey.toLowerCase())
+      )) {
+        console.log(`Translating field: ${key}`);
+        translated[key] = await translateJsonContent(value, sourceLanguage, targetLanguage);
+      } else if (skipFields.some(skipKey => 
         key.toLowerCase().includes(skipKey.toLowerCase())
       )) {
         translated[key] = value;
