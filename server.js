@@ -242,10 +242,15 @@ async function translateText(text, sourceLanguage, targetLanguage) {
   return `[${targetLanguage.toUpperCase()}] ${text}`;
 }
 
-// Translate JSON content
+// Translate JSON content and ADD translation alongside original
 async function translateJsonContent(jsonContent, sourceLanguage, targetLanguage) {
   if (typeof jsonContent === 'string') {
-    return await translateText(jsonContent, sourceLanguage, targetLanguage);
+    const translatedText = await translateText(jsonContent, sourceLanguage, targetLanguage);
+    // Return both original and translated
+    return {
+      [sourceLanguage]: jsonContent,
+      [targetLanguage]: translatedText
+    };
   } else if (Array.isArray(jsonContent)) {
     return await Promise.all(
       jsonContent.map(item => translateJsonContent(item, sourceLanguage, targetLanguage))
@@ -253,11 +258,11 @@ async function translateJsonContent(jsonContent, sourceLanguage, targetLanguage)
   } else if (jsonContent && typeof jsonContent === 'object') {
     const translated = {};
     for (const [key, value] of Object.entries(jsonContent)) {
-      // Skip technical fields but allow Brand, Type, Compatibility to be translated
+      // Skip technical fields but allow Brand, Type, Compatibility, General to be translated
       const skipFields = ['id', 'sku', 'barcode', 'ean', 'upc', 'isbn', 'asin', 'url', 'link', 'image', 'images', 'video', 'videos', 'price', 'cost', 'weight', 'dimensions', 'size', 'color_code', 'hex', 'rgb', 'hsl', 'date', 'time', 'timestamp', 'created_at', 'updated_at', 'status', 'category', 'tags', 'keywords'];
       
-      // Always translate Brand, Type, Compatibility fields
-      const alwaysTranslateFields = ['brand', 'type', 'compatibility'];
+      // Always translate Brand, Type, Compatibility, General fields and their values
+      const alwaysTranslateFields = ['brand', 'type', 'compatibility', 'general'];
       
       if (alwaysTranslateFields.some(translateKey => 
         key.toLowerCase().includes(translateKey.toLowerCase())
@@ -269,7 +274,15 @@ async function translateJsonContent(jsonContent, sourceLanguage, targetLanguage)
       )) {
         translated[key] = value;
       } else {
-        translated[key] = await translateJsonContent(value, sourceLanguage, targetLanguage);
+        // For other fields, translate both the key name and the value
+        const translatedKey = await translateText(key, sourceLanguage, targetLanguage);
+        const translatedValue = await translateJsonContent(value, sourceLanguage, targetLanguage);
+        
+        // Create a structure with both original and translated key names
+        translated[key] = translatedValue;
+        if (translatedKey !== key) {
+          translated[translatedKey] = translatedValue;
+        }
       }
     }
     return translated;
