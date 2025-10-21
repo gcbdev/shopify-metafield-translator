@@ -244,13 +244,18 @@ app.get('/api/product/:id/metafield', authenticateShopify, async (req, res) => {
 app.post('/api/test-translate', async (req, res) => {
   try {
     const { productId, targetLanguage, sourceLanguage = 'en' } = req.body;
+    const shop = req.query.shop;
 
     if (!productId || !targetLanguage) {
       return res.status(400).json({ error: 'Product ID and target language are required' });
     }
 
+    if (!shop) {
+      return res.status(400).json({ error: 'Shop parameter is required' });
+    }
+
     // Get the metafield for the specific product
-    const metafieldResponse = await axios.get(`${req.protocol}://${req.get('host')}/api/product/${productId}/metafield?shop=${req.query.shop}`);
+    const metafieldResponse = await axios.get(`${req.protocol}://${req.get('host')}/api/product/${productId}/metafield?shop=${shop}`);
     const metafieldData = metafieldResponse.data;
     
     if (!metafieldData.success || !metafieldData.metafield) {
@@ -288,13 +293,18 @@ app.post('/api/test-translate', async (req, res) => {
 app.post('/api/translate', async (req, res) => {
   try {
     const { productId, targetLanguage, sourceLanguage = 'en' } = req.body;
+    const shop = req.query.shop;
 
     if (!productId || !targetLanguage) {
       return res.status(400).json({ error: 'Product ID and target language are required' });
     }
 
+    if (!shop) {
+      return res.status(400).json({ error: 'Shop parameter is required' });
+    }
+
     // Get the metafield for the specific product
-    const metafieldResponse = await axios.get(`${req.protocol}://${req.get('host')}/api/product/${productId}/metafield?shop=${req.query.shop}`);
+    const metafieldResponse = await axios.get(`${req.protocol}://${req.get('host')}/api/product/${productId}/metafield?shop=${shop}`);
     const metafieldData = metafieldResponse.data;
     
     if (!metafieldData.success || !metafieldData.metafield) {
