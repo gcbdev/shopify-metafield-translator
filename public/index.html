@@ -512,7 +512,8 @@
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
-                        translatedContent: JSON.parse(translatedContent)
+                        translatedContent: JSON.parse(translatedContent),
+                        productId: currentProduct
                     })
                 });
                 

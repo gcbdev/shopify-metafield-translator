@@ -416,23 +416,27 @@ app.post('/api/translate', async (req, res) => {
   }
 });
 
-// Update the specification metafield for French translation (Translate & Adapt field)
+// Create French translation for Translate & Adapt (updates the French column)
 app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
   try {
     const { id } = req.params;
-    const { translatedContent } = req.body;
+    const { translatedContent, productId } = req.body;
     const shop = req.shop;
     const accessToken = req.accessToken;
 
-    if (!translatedContent) {
-      return res.status(400).json({ error: 'Translated content is required' });
+    if (!translatedContent || !productId) {
+      return res.status(400).json({ error: 'Translated content and product ID are required' });
     }
 
-    // Update the existing specification metafield with French translation
-    const response = await axios.put(`https://${shop}/admin/api/2023-10/metafields/${id}.json`, {
+    // Create French version of the specification metafield for Translate & Adapt
+    const response = await axios.post(`https://${shop}/admin/api/2023-10/products/${productId}/metafields.json`, {
       metafield: {
-        id: id,
-        value: JSON.stringify(translatedContent)
+        namespace: 'custom',
+        key: 'specification',
+        value: JSON.stringify(translatedContent),
+        type: 'json',
+        owner_resource: 'product',
+        owner_id: productId
       }
     }, {
       headers: {
@@ -444,11 +448,11 @@ app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
     res.json({
       success: true,
       metafield: response.data.metafield,
-      message: 'French translation added to Translate & Adapt field successfully!'
+      message: 'French translation added to Translate & Adapt French column!'
     });
   } catch (error) {
-    console.error('Error updating specification metafield:', error);
-    res.status(500).json({ error: 'Failed to update specification metafield' });
+    console.error('Error creating French translation:', error);
+    res.status(500).json({ error: 'Failed to create French translation' });
   }
 });
 
