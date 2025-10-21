@@ -430,7 +430,7 @@
                 // Validate JSON
                 JSON.parse(translatedContent);
                 
-                const response = await fetch(`/api/metafield/${currentMetafieldId}`, {
+                const response = await fetch(`/api/metafield/${currentMetafieldId}?shop=${shop}`, {
                     method: 'PUT',
                     headers: {
                         'Content-Type': 'application/json',
