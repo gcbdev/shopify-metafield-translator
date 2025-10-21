@@ -432,14 +432,42 @@ app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
     console.log('Product ID:', productId);
     console.log('Translated content preview:', JSON.stringify(translatedContent).substring(0, 200) + '...');
 
-    // Create a French metafield with a different key that Translate & Adapt can use
-    const response = await axios.post(`https://${shop}/admin/api/2023-10/products/${productId}/metafields.json`, {
-      metafield: {
-        namespace: 'custom',
-        key: 'specification_fr',
-        value: JSON.stringify(translatedContent),
-        type: 'json'
+    // Use Shopify's GraphQL Translations API to register French translation
+    // Based on: https://community.shopify.com/t/graphql-api-and-translation/158432
+    const graphqlQuery = `
+      mutation CreateTranslation($id: ID!, $translations: [TranslationInput!]!) {
+        translationsRegister(resourceId: $id, translations: $translations) {
+          userErrors {
+            message
+            field
+          }
+          translations {
+            locale
+            key
+            value
+          }
+        }
       }
+    `;
+
+    // Generate digest for the metafield value (required for translation)
+    const crypto = require('crypto');
+    const originalValue = JSON.stringify(translatedContent);
+    const translatableContentDigest = crypto.createHash('sha256').update(originalValue).digest('hex');
+
+    const variables = {
+      id: `gid://shopify/Metafield/${id}`,
+      translations: [{
+        key: "value",
+        value: JSON.stringify(translatedContent),
+        locale: "fr",
+        translatableContentDigest: translatableContentDigest
+      }]
+    };
+
+    const response = await axios.post(`https://${shop}/admin/api/2023-10/graphql.json`, {
+      query: graphqlQuery,
+      variables: variables
     }, {
       headers: {
         'X-Shopify-Access-Token': accessToken,
@@ -447,10 +475,18 @@ app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
       }
     });
 
+    if (response.data.data.translationsRegister.userErrors.length > 0) {
+      console.error('GraphQL translation errors:', response.data.data.translationsRegister.userErrors);
+      return res.status(400).json({ 
+        error: 'Translation registration failed',
+        details: response.data.data.translationsRegister.userErrors
+      });
+    }
+
     res.json({
       success: true,
-      metafield: response.data.metafield,
-      message: 'French translation metafield created successfully!'
+      translation: response.data.data.translationsRegister.translations[0],
+      message: 'French translation registered with Translate & Adapt successfully!'
     });
   } catch (error) {
     console.error('Error creating French translation:', error.response?.data || error.message);
