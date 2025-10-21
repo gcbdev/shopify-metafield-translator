@@ -456,6 +456,19 @@ app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
     console.log('Product ID:', productId);
     console.log('Translated content preview:', JSON.stringify(translatedContent).substring(0, 200) + '...');
     console.log('Metafield GraphQL ID:', `gid://shopify/Metafield/${id}`);
+    
+    // Check API token permissions
+    try {
+      const permissionsResponse = await axios.get(`https://${shop}/admin/api/2024-01/shop.json`, {
+        headers: {
+          'X-Shopify-Access-Token': accessToken,
+          'Content-Type': 'application/json'
+        }
+      });
+      console.log('Shop info (to verify API access):', permissionsResponse.data.shop.name);
+    } catch (permError) {
+      console.error('API permission check failed:', permError.response?.data || permError.message);
+    }
 
     // Use Shopify's GraphQL Translations API to register French translation
     // Based on: https://community.shopify.com/t/graphql-api-and-translation/158432
@@ -506,7 +519,7 @@ app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
 
     console.log('GraphQL variables:', JSON.stringify(variables, null, 2));
 
-    const response = await axios.post(`https://${shop}/admin/api/2023-10/graphql.json`, {
+    const response = await axios.post(`https://${shop}/admin/api/2024-01/graphql.json`, {
       query: graphqlQuery,
       variables: variables
     }, {
@@ -521,10 +534,10 @@ app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
     // Check for GraphQL errors
     if (response.data.errors) {
       console.error('GraphQL errors:', response.data.errors);
-      return res.status(400).json({ 
-        error: 'GraphQL errors occurred',
-        details: response.data.errors
-      });
+      console.error('Full GraphQL response:', JSON.stringify(response.data, null, 2));
+      
+      // Don't return here - let the fallback method try
+      throw new Error(`GraphQL errors: ${JSON.stringify(response.data.errors)}`);
     }
 
     // Check for user errors in the mutation
