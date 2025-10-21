@@ -518,7 +518,17 @@ app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
 
     console.log('GraphQL response:', JSON.stringify(response.data, null, 2));
 
-    if (response.data.data.translationsRegister.userErrors.length > 0) {
+    // Check for GraphQL errors
+    if (response.data.errors) {
+      console.error('GraphQL errors:', response.data.errors);
+      return res.status(400).json({ 
+        error: 'GraphQL errors occurred',
+        details: response.data.errors
+      });
+    }
+
+    // Check for user errors in the mutation
+    if (response.data.data && response.data.data.translationsRegister && response.data.data.translationsRegister.userErrors.length > 0) {
       console.error('GraphQL translation errors:', response.data.data.translationsRegister.userErrors);
       return res.status(400).json({ 
         error: 'Translation registration failed',
@@ -526,21 +536,68 @@ app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
       });
     }
 
-    res.json({
-      success: true,
-      translation: response.data.data.translationsRegister.translations[0],
-      message: 'French translation registered with Translate & Adapt successfully!'
-    });
+    // Check if translation was successful
+    if (response.data.data && response.data.data.translationsRegister && response.data.data.translationsRegister.translations) {
+      res.json({
+        success: true,
+        translation: response.data.data.translationsRegister.translations[0],
+        message: 'French translation registered with Translate & Adapt successfully!'
+      });
+    } else {
+      console.error('Unexpected response structure:', response.data);
+      return res.status(400).json({ 
+        error: 'Unexpected response from Shopify',
+        details: response.data
+      });
+    }
   } catch (error) {
     console.error('Error creating French translation:', error.response?.data || error.message);
     console.error('Error status:', error.response?.status);
     console.error('Error details:', error.response?.data);
     
-    res.status(500).json({ 
-      error: 'Failed to create French translation',
-      details: error.response?.data || error.message,
-      status: error.response?.status
-    });
+    // Fallback: Try creating a French locale metafield directly
+    console.log('Attempting fallback method: Creating French locale metafield...');
+    
+    try {
+      const fallbackResponse = await axios.post(`https://${shop}/admin/api/2023-10/metafields.json`, {
+        metafield: {
+          namespace: "custom",
+          key: "specification",
+          value: JSON.stringify(translatedContent),
+          type: "json",
+          owner_id: productId,
+          owner_resource: "product",
+          locale: "fr"
+        }
+      }, {
+        headers: {
+          'X-Shopify-Access-Token': accessToken,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      console.log('Fallback method successful:', fallbackResponse.data);
+      
+      res.json({
+        success: true,
+        translation: fallbackResponse.data.metafield,
+        message: 'French translation created using fallback method!',
+        method: 'fallback'
+      });
+      
+    } catch (fallbackError) {
+      console.error('Fallback method also failed:', fallbackError.response?.data || fallbackError.message);
+      
+      res.status(500).json({ 
+        error: 'Failed to create French translation (both methods failed)',
+        details: {
+          graphql_error: error.response?.data || error.message,
+          fallback_error: fallbackError.response?.data || fallbackError.message,
+          graphql_status: error.response?.status,
+          fallback_status: fallbackError.response?.status
+        }
+      });
+    }
   }
 });
 
