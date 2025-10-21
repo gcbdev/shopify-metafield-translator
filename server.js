@@ -416,25 +416,23 @@ app.post('/api/translate', async (req, res) => {
   }
 });
 
-// Create or update translation metafield (separate from original)
+// Update the specification metafield for French translation (Translate & Adapt field)
 app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
   try {
     const { id } = req.params;
-    const { translatedContent, productId } = req.body;
+    const { translatedContent } = req.body;
     const shop = req.shop;
     const accessToken = req.accessToken;
 
-    if (!translatedContent || !productId) {
-      return res.status(400).json({ error: 'Translated content and product ID are required' });
+    if (!translatedContent) {
+      return res.status(400).json({ error: 'Translated content is required' });
     }
 
-    // Create a new metafield for translations instead of updating the original
-    const response = await axios.post(`https://${shop}/admin/api/2023-10/products/${productId}/metafields.json`, {
+    // Update the existing specification metafield with French translation
+    const response = await axios.put(`https://${shop}/admin/api/2023-10/metafields/${id}.json`, {
       metafield: {
-        namespace: 'custom',
-        key: 'specification_translated',
-        value: JSON.stringify(translatedContent),
-        type: 'json'
+        id: id,
+        value: JSON.stringify(translatedContent)
       }
     }, {
       headers: {
@@ -446,11 +444,11 @@ app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
     res.json({
       success: true,
       metafield: response.data.metafield,
-      message: 'Translation metafield created successfully! Original metafield preserved.'
+      message: 'French translation added to Translate & Adapt field successfully!'
     });
   } catch (error) {
-    console.error('Error creating translation metafield:', error);
-    res.status(500).json({ error: 'Failed to create translation metafield' });
+    console.error('Error updating specification metafield:', error);
+    res.status(500).json({ error: 'Failed to update specification metafield' });
   }
 });
 
