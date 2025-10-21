@@ -256,28 +256,43 @@
         const urlParams = new URLSearchParams(window.location.search);
         const shop = urlParams.get('shop');
         
+        console.log('Shop parameter from URL:', shop);
+        
         // Load products on page load
         window.onload = function() {
             if (shop) {
+                console.log('Loading products for shop:', shop);
                 loadProducts();
+            } else {
+                console.log('No shop parameter found in URL');
+                showError('No shop parameter found. Please access the app with ?shop=your-store.myshopify.com');
             }
         };
         
         async function loadProducts() {
             try {
+                console.log('Loading products for shop:', shop);
                 showLoading();
+                
+                if (!shop) {
+                    showError('Shop parameter is required');
+                    return;
+                }
+                
                 const response = await fetch(`/api/products?shop=${shop}`);
                 const data = await response.json();
+                
+                console.log('Products API response:', data);
                 
                 if (data.success) {
                     products = data.products;
                     displayProducts();
                 } else {
-                    showError('Failed to load products');
+                    showError('Failed to load products: ' + (data.error || 'Unknown error'));
                 }
             } catch (error) {
                 console.error('Error loading products:', error);
-                showError('Error loading products');
+                showError('Error loading products: ' + error.message);
             }
         }
         
@@ -321,7 +336,7 @@
             try {
                 const targetLanguage = document.getElementById('target-language').value;
                 
-                const response = await fetch('/api/test-translate', {
+                const response = await fetch(`/api/test-translate?shop=${shop}`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -369,7 +384,7 @@
             try {
                 const targetLanguage = document.getElementById('target-language').value;
                 
-                const response = await fetch('/api/translate', {
+                const response = await fetch(`/api/translate?shop=${shop}`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -454,7 +469,7 @@
                 const targetLanguage = document.getElementById('target-language').value;
                 
                 // Call the live translation API
-                const response = await fetch('/api/translate', {
+                const response = await fetch(`/api/translate?shop=${shop}`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
