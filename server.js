@@ -51,6 +51,37 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Test authentication endpoint
+app.get('/api/test-auth', authenticateShopify, async (req, res) => {
+  try {
+    const shop = req.shop;
+    const accessToken = req.accessToken;
+    
+    // Test API call to verify authentication
+    const response = await axios.get(`https://${shop}/admin/api/2023-10/shop.json`, {
+      headers: {
+        'X-Shopify-Access-Token': accessToken,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    res.json({
+      success: true,
+      message: 'Authentication successful',
+      shop: shop,
+      shopData: response.data.shop
+    });
+  } catch (error) {
+    console.error('Auth test error:', error.response?.data || error.message);
+    res.status(500).json({
+      success: false,
+      error: 'Authentication failed',
+      details: error.response?.data || error.message,
+      status: error.response?.status
+    });
+  }
+});
+
 // Simple authentication middleware using API credentials
 const authenticateShopify = async (req, res, next) => {
   try {
@@ -80,6 +111,8 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
     const safeLimit = Math.min(Math.max(limit, 1), maxLimit);
     const accessToken = req.accessToken;
 
+    console.log(`Fetching products from ${shop} with token: ${accessToken.substring(0, 10)}...`);
+
     // Get products from your store
     const response = await axios.get(`https://${shop}/admin/api/2023-10/products.json`, {
       headers: {
@@ -91,6 +124,8 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
         fields: 'id,title,handle'
       }
     });
+
+    console.log(`Successfully fetched ${response.data.products.length} products from Shopify`);
 
     const products = response.data.products;
     const productsWithSpecs = [];
@@ -118,9 +153,11 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
           });
         }
       } catch (error) {
-        console.error(`Error fetching metafields for product ${product.id}:`, error);
+        console.error(`Error fetching metafields for product ${product.id}:`, error.message);
       }
     }
+
+    console.log(`Found ${productsWithSpecs.length} products with custom.specification metafields`);
 
     res.json({
       success: true,
@@ -130,11 +167,12 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
       message: `Found ${productsWithSpecs.length} products with custom.specification metafields from ${shop}. Use ?limit=X to control how many products to display.`
     });
   } catch (error) {
-    console.error('Error fetching products:', error);
+    console.error('Error fetching products:', error.response?.data || error.message);
     res.status(500).json({ 
       error: 'Failed to fetch products',
-      details: error.message,
-      shop: req.shop
+      details: error.response?.data || error.message,
+      shop: req.shop,
+      status: error.response?.status
     });
   }
 });
