@@ -432,14 +432,14 @@ app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
     console.log('Product ID:', productId);
     console.log('Translated content preview:', JSON.stringify(translatedContent).substring(0, 200) + '...');
 
-    // Use Shopify's Localization API to add French translation for Translate & Adapt
-    const response = await axios.post(`https://${shop}/admin/api/2023-10/translations.json`, {
-      translation: {
-        resource_type: 'metafield',
-        resource_id: id,
-        locale: 'fr',
+    // Try using product localization API instead
+    const response = await axios.post(`https://${shop}/admin/api/2023-10/products/${productId}/metafields.json`, {
+      metafield: {
+        namespace: 'custom',
+        key: 'specification',
         value: JSON.stringify(translatedContent),
-        key: 'value'
+        type: 'json',
+        locale: 'fr'
       }
     }, {
       headers: {
@@ -450,8 +450,8 @@ app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
 
     res.json({
       success: true,
-      translation: response.data.translation,
-      message: 'French translation added to Translate & Adapt successfully!'
+      metafield: response.data.metafield,
+      message: 'French translation metafield created successfully!'
     });
   } catch (error) {
     console.error('Error creating French translation:', error.response?.data || error.message);
