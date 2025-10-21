@@ -242,15 +242,12 @@ async function translateText(text, sourceLanguage, targetLanguage) {
   return `[${targetLanguage.toUpperCase()}] ${text}`;
 }
 
-// Translate JSON content and ADD translation alongside original
+// Translate JSON content - return ONLY the French translation
 async function translateJsonContent(jsonContent, sourceLanguage, targetLanguage) {
   if (typeof jsonContent === 'string') {
     const translatedText = await translateText(jsonContent, sourceLanguage, targetLanguage);
-    // Return both original and translated
-    return {
-      [sourceLanguage]: jsonContent,
-      [targetLanguage]: translatedText
-    };
+    // Return only the translated text
+    return translatedText;
   } else if (Array.isArray(jsonContent)) {
     return await Promise.all(
       jsonContent.map(item => translateJsonContent(item, sourceLanguage, targetLanguage))
@@ -278,11 +275,8 @@ async function translateJsonContent(jsonContent, sourceLanguage, targetLanguage)
         const translatedKey = await translateText(key, sourceLanguage, targetLanguage);
         const translatedValue = await translateJsonContent(value, sourceLanguage, targetLanguage);
         
-        // Create a structure with both original and translated key names
-        translated[key] = translatedValue;
-        if (translatedKey !== key) {
-          translated[translatedKey] = translatedValue;
-        }
+        // Use only the translated key name
+        translated[translatedKey] = translatedValue;
       }
     }
     return translated;
