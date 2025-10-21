@@ -432,14 +432,13 @@ app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
     console.log('Product ID:', productId);
     console.log('Translated content preview:', JSON.stringify(translatedContent).substring(0, 200) + '...');
 
-    // Try using product localization API instead
+    // Create a French metafield with a different key that Translate & Adapt can use
     const response = await axios.post(`https://${shop}/admin/api/2023-10/products/${productId}/metafields.json`, {
       metafield: {
         namespace: 'custom',
-        key: 'specification',
+        key: 'specification_fr',
         value: JSON.stringify(translatedContent),
-        type: 'json',
-        locale: 'fr'
+        type: 'json'
       }
     }, {
       headers: {

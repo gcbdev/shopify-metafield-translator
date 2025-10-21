@@ -206,22 +206,11 @@
         
         <div class="controls">
             <div class="form-group">
-                <label for="target-language">Target Language:</label>
-                <select id="target-language">
-                    <option value="en">English</option>
-                    <option value="fr">French</option>
-                    <option value="de">German</option>
-                </select>
+                <label>Target Language: French</label>
+                <input type="hidden" id="target-language" value="fr">
             </div>
-            <div class="form-group">
-                <label for="product-selector">Select Product for Testing:</label>
-                <select id="product-selector">
-                    <option value="">Loading products...</option>
-                </select>
-            </div>
-            <button class="btn" onclick="loadProducts()">Load All Products</button>
-            <button class="btn btn-secondary" onclick="testSelectedProduct()">Test Selected Product</button>
-            <button class="btn btn-secondary" onclick="translateAll()">Translate All</button>
+            <button class="btn" onclick="loadProducts()">Load Products</button>
+            <button class="btn btn-secondary" onclick="translateAll()">Translate All to French</button>
         </div>
         
         <div id="products-container">
@@ -300,19 +289,11 @@
         
         function displayProducts() {
             const container = document.getElementById('products-container');
-            const productSelector = document.getElementById('product-selector');
             
             if (products.length === 0) {
                 container.innerHTML = '<div class="loading">No products with custom.specification metafield found.</div>';
-                productSelector.innerHTML = '<option value="">No products found</option>';
                 return;
             }
-            
-            // Populate product selector
-            productSelector.innerHTML = '<option value="">Select a product for testing...</option>' +
-                products.map(product => 
-                    `<option value="${product.id}">${product.title} (ID: ${product.id})</option>`
-                ).join('');
             
             container.innerHTML = `
                 <div class="products-grid">
@@ -321,74 +302,14 @@
                             <div class="product-title">${product.title}</div>
                             <div class="product-handle">${product.handle}</div>
                             <div class="metafield-preview">${getMetafieldPreview(product)}</div>
-                            <button class="btn" onclick="testTranslateProduct(${product.id})">Test Translation</button>
-                            <button class="btn btn-secondary" onclick="translateProduct(${product.id})">Translate & Save</button>
+                            <button class="btn" onclick="testTranslateProduct(${product.id})">Test French Translation</button>
+                            <button class="btn btn-secondary" onclick="translateProduct(${product.id})">Translate to French</button>
                         </div>
                     `).join('')}
                 </div>
             `;
         }
         
-        async function testSelectedProduct() {
-            const productId = document.getElementById('product-selector').value;
-            const targetLanguage = document.getElementById('target-language').value;
-            
-            if (!productId) {
-                showError('Please select a product first');
-                return;
-            }
-            
-            if (!targetLanguage) {
-                showError('Please select a target language');
-                return;
-            }
-            
-            try {
-                console.log(`Testing translation for product ${productId} to ${targetLanguage}`);
-                
-                const response = await fetch(`/api/test-translate?shop=${shop}`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        productId: parseInt(productId),
-                        targetLanguage: targetLanguage,
-                        sourceLanguage: 'en'
-                    })
-                });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    currentProduct = parseInt(productId);
-                    currentMetafieldId = data.metafieldId;
-                    
-                    document.getElementById('modal-product-info').innerHTML = `
-                        <p><strong>Product ID:</strong> ${productId}</p>
-                        <p><strong>Target Language:</strong> ${targetLanguage}</p>
-                        <p><strong>Mode:</strong> <span style="color: #f59e0b;">TEST MODE</span></p>
-                    `;
-                    
-                    document.getElementById('original-content').value = JSON.stringify(data.originalContent, null, 2);
-                    document.getElementById('translated-content').value = JSON.stringify(data.translatedContent, null, 2);
-                    
-                    // Disable editing in test mode
-                    document.getElementById('translated-content').readOnly = true;
-                    
-                    // Show promote button, hide save button
-                    document.getElementById('promote-btn').style.display = 'inline-block';
-                    document.getElementById('save-btn').style.display = 'none';
-                    
-                    document.getElementById('translation-modal').style.display = 'block';
-                } else {
-                    showError(data.error || 'Test translation failed');
-                }
-            } catch (error) {
-                console.error('Test translation error:', error);
-                showError('Test translation failed');
-            }
-        }
         
         function getMetafieldPreview(product) {
             const metafield = product.metafields?.find(m => m.namespace === 'custom' && m.key === 'specification');
