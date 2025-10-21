@@ -51,7 +51,7 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Authentication middleware with proper OAuth flow
+// Simple authentication middleware using API credentials
 const authenticateShopify = async (req, res, next) => {
   try {
     const shop = req.query.shop;
@@ -59,19 +59,11 @@ const authenticateShopify = async (req, res, next) => {
       return res.status(400).json({ error: 'Shop parameter is required' });
     }
 
-    // Check if we have a valid access token in session
-    const accessToken = req.session.accessToken;
-    
-    if (!accessToken) {
-      // Redirect to OAuth flow
-      const authUrl = `https://${shop}/admin/oauth/authorize?client_id=${process.env.SHOPIFY_API_KEY}&scope=read_products,write_products,read_product_listings,write_product_listings&redirect_uri=${encodeURIComponent(process.env.HOST + '/auth/callback')}&state=${shop}`;
-      return res.redirect(authUrl);
-    }
-
+    // Use Admin API access token for direct API access
     req.shop = shop;
-    req.accessToken = accessToken;
-    req.apiKey = process.env.SHOPIFY_API_KEY;
-    req.apiSecret = process.env.SHOPIFY_API_SECRET;
+    req.accessToken = process.env.SHOPIFY_ACCESS_TOKEN || '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';
+    req.apiKey = process.env.SHOPIFY_API_KEY || '853a30498ded7d4a2fcdfa2787f463a2';
+    req.apiSecret = process.env.SHOPIFY_API_SECRET || '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';
     next();
   } catch (error) {
     console.error('Authentication error:', error);
