@@ -476,12 +476,23 @@ app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
     `;
 
     // Generate digest for the metafield value (required for translation)
+    // The digest should be of the ORIGINAL content, not the translated content
     const crypto = require('crypto');
-    const originalValue = JSON.stringify(translatedContent);
-    const translatableContentDigest = crypto.createHash('sha256').update(originalValue).digest('hex');
     
-    console.log('Generated digest:', translatableContentDigest);
-    console.log('Original value for digest:', originalValue);
+    // First, get the original metafield content to generate the correct digest
+    const metafieldResponse = await axios.get(`https://${shop}/admin/api/2023-10/metafields/${id}.json`, {
+      headers: {
+        'X-Shopify-Access-Token': accessToken,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    const originalMetafieldValue = metafieldResponse.data.metafield.value;
+    const translatableContentDigest = crypto.createHash('sha256').update(originalMetafieldValue).digest('hex');
+    
+    console.log('Original metafield value:', originalMetafieldValue);
+    console.log('Generated digest from original:', translatableContentDigest);
+    console.log('Translated content:', JSON.stringify(translatedContent));
 
     const variables = {
       id: `gid://shopify/Metafield/${id}`,
