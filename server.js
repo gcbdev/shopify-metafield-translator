@@ -73,113 +73,59 @@ const authenticateShopify = async (req, res, next) => {
   }
 };
 
-// Mock products API for testing (will be replaced with real Shopify API)
+// Get real products from your Shopify store
 app.get('/api/products', authenticateShopify, async (req, res) => {
   try {
     const shop = req.shop;
-    
-    // Mock products that simulate your real products with custom.specification metafields
-    const mockProducts = [
-      {
-        id: 1,
-        title: "Professional Camera Stand",
-        handle: "professional-camera-stand",
-        metafields: [
-          {
-            id: 101,
-            namespace: "custom",
-            key: "specification",
-            value: JSON.stringify({
-              "General specifications": {
-                "Type": ["Stand"],
-                "Contents": ["Light stand with leveling leg"],
-                "Overview": ["Black chrome plated steel stand"]
-              },
-              "Stand properties": {
-                "Height / Length": ["10.3 '"],
-                "Collapsed Height": ["48.03 ''"],
-                "Fitting": ["type 14 attachment type"],
-                "Weight": ["6.61 lbs"],
-                "Other specs": ["Footprint - maximum diameter: 46.46''<br>Load capacity: 26.46 lbs<br>Load capacity at maximum extension: 5.51 lbs<br>Suggested wheels: 109, 110, 110G"]
-              },
-              "Hidden": {
-                "Compatibility": ["Manfrotto 110 Wheels", "Manfrotto 110G Wheels", "Manfrotto 109 Wheels"],
-                "Brand": ["Manfrotto"]
-              }
-            })
-          }
-        ]
+    const apiSecret = req.apiSecret;
+
+    // Get products from your store
+    const response = await axios.get(`https://${shop}/admin/api/2023-10/products.json`, {
+      headers: {
+        'X-Shopify-Access-Token': apiSecret,
+        'Content-Type': 'application/json'
       },
-      {
-        id: 2,
-        title: "Wireless Headphones Pro",
-        handle: "wireless-headphones-pro",
-        metafields: [
-          {
-            id: 102,
-            namespace: "custom",
-            key: "specification",
-            value: JSON.stringify({
-              "Audio specifications": {
-                "Driver Type": ["Dynamic"],
-                "Frequency Response": ["20Hz - 20kHz"],
-                "Impedance": ["32 ohms"],
-                "Sensitivity": ["105 dB"]
-              },
-              "Connectivity": {
-                "Bluetooth Version": ["5.0"],
-                "Range": ["30 feet"],
-                "Battery Life": ["30 hours"],
-                "Charging Time": ["2 hours"]
-              },
-              "Features": {
-                "Noise Cancellation": ["Active"],
-                "Water Resistance": ["IPX4"],
-                "Controls": ["Touch controls", "Voice assistant"]
-              }
-            })
-          }
-        ]
-      },
-      {
-        id: 3,
-        title: "Smart Fitness Watch",
-        handle: "smart-fitness-watch",
-        metafields: [
-          {
-            id: 103,
-            namespace: "custom",
-            key: "specification",
-            value: JSON.stringify({
-              "Display": {
-                "Screen Size": ["1.4 inch"],
-                "Resolution": ["454 x 454 pixels"],
-                "Type": ["AMOLED"],
-                "Brightness": ["1000 nits"]
-              },
-              "Health Monitoring": {
-                "Heart Rate": ["Continuous monitoring"],
-                "Blood Oxygen": ["SpO2 tracking"],
-                "Sleep Tracking": ["Advanced sleep stages"],
-                "Stress Monitoring": ["Real-time stress levels"]
-              },
-              "Fitness Features": {
-                "GPS": ["Built-in GPS"],
-                "Water Resistance": ["5ATM"],
-                "Battery Life": ["7 days"],
-                "Workout Modes": ["50+ sports modes"]
-              }
-            })
-          }
-        ]
+      params: {
+        limit: 50,
+        fields: 'id,title,handle'
       }
-    ];
+    });
+
+    const products = response.data.products;
+    const productsWithSpecs = [];
+
+    // Check each product for custom.specification metafield
+    for (const product of products) {
+      try {
+        const metafieldResponse = await axios.get(`https://${shop}/admin/api/2023-10/products/${product.id}/metafields.json`, {
+          headers: {
+            'X-Shopify-Access-Token': apiSecret,
+            'Content-Type': 'application/json'
+          },
+          params: {
+            namespace: 'custom',
+            key: 'specification'
+          }
+        });
+
+        if (metafieldResponse.data.metafields && metafieldResponse.data.metafields.length > 0) {
+          productsWithSpecs.push({
+            id: product.id,
+            title: product.title,
+            handle: product.handle,
+            metafields: metafieldResponse.data.metafields
+          });
+        }
+      } catch (error) {
+        console.error(`Error fetching metafields for product ${product.id}:`, error);
+      }
+    }
 
     res.json({
       success: true,
-      products: mockProducts,
-      total: mockProducts.length,
-      message: `Demo Mode: Showing ${mockProducts.length} sample products with custom.specification metafields. Connect to ${shop} for real products.`
+      products: productsWithSpecs,
+      total: productsWithSpecs.length,
+      message: `Found ${productsWithSpecs.length} products with custom.specification metafields from ${shop}`
     });
   } catch (error) {
     console.error('Error fetching products:', error);
@@ -248,92 +194,27 @@ async function translateJsonContent(jsonContent, sourceLanguage, targetLanguage)
   return jsonContent;
 }
 
-// Mock metafield API for testing
+// Get specific product metafield from your Shopify store
 app.get('/api/product/:id/metafield', authenticateShopify, async (req, res) => {
   try {
     const { id } = req.params;
-    
-    // Mock metafield data based on product ID
-    const mockMetafields = {
-      1: {
-        id: 101,
-        namespace: "custom",
-        key: "specification",
-        value: JSON.stringify({
-          "General specifications": {
-            "Type": ["Stand"],
-            "Contents": ["Light stand with leveling leg"],
-            "Overview": ["Black chrome plated steel stand"]
-          },
-          "Stand properties": {
-            "Height / Length": ["10.3 '"],
-            "Collapsed Height": ["48.03 ''"],
-            "Fitting": ["type 14 attachment type"],
-            "Weight": ["6.61 lbs"],
-            "Other specs": ["Footprint - maximum diameter: 46.46''<br>Load capacity: 26.46 lbs<br>Load capacity at maximum extension: 5.51 lbs<br>Suggested wheels: 109, 110, 110G"]
-          },
-          "Hidden": {
-            "Compatibility": ["Manfrotto 110 Wheels", "Manfrotto 110G Wheels", "Manfrotto 109 Wheels"],
-            "Brand": ["Manfrotto"]
-          }
-        })
-      },
-      2: {
-        id: 102,
-        namespace: "custom",
-        key: "specification",
-        value: JSON.stringify({
-          "Audio specifications": {
-            "Driver Type": ["Dynamic"],
-            "Frequency Response": ["20Hz - 20kHz"],
-            "Impedance": ["32 ohms"],
-            "Sensitivity": ["105 dB"]
-          },
-          "Connectivity": {
-            "Bluetooth Version": ["5.0"],
-            "Range": ["30 feet"],
-            "Battery Life": ["30 hours"],
-            "Charging Time": ["2 hours"]
-          },
-          "Features": {
-            "Noise Cancellation": ["Active"],
-            "Water Resistance": ["IPX4"],
-            "Controls": ["Touch controls", "Voice assistant"]
-          }
-        })
-      },
-      3: {
-        id: 103,
-        namespace: "custom",
-        key: "specification",
-        value: JSON.stringify({
-          "Display": {
-            "Screen Size": ["1.4 inch"],
-            "Resolution": ["454 x 454 pixels"],
-            "Type": ["AMOLED"],
-            "Brightness": ["1000 nits"]
-          },
-          "Health Monitoring": {
-            "Heart Rate": ["Continuous monitoring"],
-            "Blood Oxygen": ["SpO2 tracking"],
-            "Sleep Tracking": ["Advanced sleep stages"],
-            "Stress Monitoring": ["Real-time stress levels"]
-          },
-          "Fitness Features": {
-            "GPS": ["Built-in GPS"],
-            "Water Resistance": ["5ATM"],
-            "Battery Life": ["7 days"],
-            "Workout Modes": ["50+ sports modes"]
-          }
-        })
-      }
-    };
+    const shop = req.shop;
+    const apiSecret = req.apiSecret;
 
-    const metafield = mockMetafields[id] || null;
+    const response = await axios.get(`https://${shop}/admin/api/2023-10/products/${id}/metafields.json`, {
+      headers: {
+        'X-Shopify-Access-Token': apiSecret,
+        'Content-Type': 'application/json'
+      },
+      params: {
+        namespace: 'custom',
+        key: 'specification'
+      }
+    });
 
     res.json({
       success: true,
-      metafield: metafield
+      metafield: response.data.metafields[0] || null
     });
   } catch (error) {
     console.error('Error fetching metafield:', error);
@@ -429,24 +310,34 @@ app.post('/api/translate', async (req, res) => {
   }
 });
 
-// Mock metafield update for testing
+// Update metafield in your Shopify store
 app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
   try {
     const { id } = req.params;
     const { translatedContent } = req.body;
+    const shop = req.shop;
+    const apiSecret = req.apiSecret;
 
     if (!translatedContent) {
       return res.status(400).json({ error: 'Translated content is required' });
     }
 
-    // Mock successful update
-    res.json({
-      success: true,
+    const response = await axios.put(`https://${shop}/admin/api/2023-10/metafields/${id}.json`, {
       metafield: {
         id: id,
         value: JSON.stringify(translatedContent)
-      },
-      message: 'Metafield updated successfully! (Demo Mode - Translation completed)'
+      }
+    }, {
+      headers: {
+        'X-Shopify-Access-Token': apiSecret,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    res.json({
+      success: true,
+      metafield: response.data.metafield,
+      message: 'Metafield updated successfully in your Shopify store!'
     });
   } catch (error) {
     console.error('Error updating metafield:', error);
