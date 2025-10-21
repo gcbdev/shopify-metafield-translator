@@ -80,7 +80,14 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
     const safeLimit = Math.min(Math.max(limit, 1), maxLimit);
     const accessToken = req.accessToken;
 
+    console.log('=== PRODUCTS API CALL START ===');
+    console.log('Shop:', shop);
+    console.log('Limit:', safeLimit);
+    console.log('Access Token:', accessToken.substring(0, 10) + '...');
+    console.log('API URL:', `https://${shop}/admin/api/2023-10/products.json`);
+
     // Get products from your store
+    console.log('Making request to Shopify API...');
     const response = await axios.get(`https://${shop}/admin/api/2023-10/products.json`, {
       headers: {
         'X-Shopify-Access-Token': accessToken,
@@ -92,12 +99,18 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
       }
     });
 
+    console.log('Shopify API Response Status:', response.status);
+    console.log('Number of products received:', response.data.products.length);
+    console.log('First product:', response.data.products[0] ? response.data.products[0].title : 'No products');
+
     const products = response.data.products;
     const productsWithSpecs = [];
 
+    console.log('Checking metafields for each product...');
     // Check each product for custom.specification metafield
     for (const product of products) {
       try {
+        console.log(`Checking metafields for product ${product.id}: ${product.title}`);
         const metafieldResponse = await axios.get(`https://${shop}/admin/api/2023-10/products/${product.id}/metafields.json`, {
           headers: {
             'X-Shopify-Access-Token': accessToken,
@@ -109,6 +122,7 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
           }
         });
 
+        console.log(`Product ${product.id} metafields:`, metafieldResponse.data.metafields.length);
         if (metafieldResponse.data.metafields && metafieldResponse.data.metafields.length > 0) {
           productsWithSpecs.push({
             id: product.id,
@@ -116,11 +130,18 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
             handle: product.handle,
             metafields: metafieldResponse.data.metafields
           });
+          console.log(`✅ Added product ${product.id} with metafields`);
+        } else {
+          console.log(`❌ Product ${product.id} has no custom.specification metafield`);
         }
       } catch (error) {
-        console.error(`Error fetching metafields for product ${product.id}:`, error);
+        console.error(`Error fetching metafields for product ${product.id}:`, error.message);
       }
     }
+
+    console.log('=== FINAL RESULTS ===');
+    console.log('Total products with specs:', productsWithSpecs.length);
+    console.log('Products with specs:', productsWithSpecs.map(p => `${p.id}: ${p.title}`));
 
     res.json({
       success: true,
@@ -130,11 +151,18 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
       message: `Found ${productsWithSpecs.length} products with custom.specification metafields from ${shop}. Use ?limit=X to control how many products to display.`
     });
   } catch (error) {
-    console.error('Error fetching products:', error);
+    console.error('=== ERROR FETCHING PRODUCTS ===');
+    console.error('Error message:', error.message);
+    console.error('Error response:', error.response?.data);
+    console.error('Error status:', error.response?.status);
+    console.error('Shop:', req.shop);
+    
     res.status(500).json({ 
       error: 'Failed to fetch products',
       details: error.message,
-      shop: req.shop
+      shop: req.shop,
+      status: error.response?.status,
+      response: error.response?.data
     });
   }
 });
