@@ -455,6 +455,7 @@ app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
     console.log('Creating French translation for metafield:', id);
     console.log('Product ID:', productId);
     console.log('Translated content preview:', JSON.stringify(translatedContent).substring(0, 200) + '...');
+    console.log('Metafield GraphQL ID:', `gid://shopify/Metafield/${id}`);
 
     // Use Shopify's GraphQL Translations API to register French translation
     // Based on: https://community.shopify.com/t/graphql-api-and-translation/158432
@@ -478,6 +479,9 @@ app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
     const crypto = require('crypto');
     const originalValue = JSON.stringify(translatedContent);
     const translatableContentDigest = crypto.createHash('sha256').update(originalValue).digest('hex');
+    
+    console.log('Generated digest:', translatableContentDigest);
+    console.log('Original value for digest:', originalValue);
 
     const variables = {
       id: `gid://shopify/Metafield/${id}`,
@@ -489,6 +493,8 @@ app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
       }]
     };
 
+    console.log('GraphQL variables:', JSON.stringify(variables, null, 2));
+
     const response = await axios.post(`https://${shop}/admin/api/2023-10/graphql.json`, {
       query: graphqlQuery,
       variables: variables
@@ -498,6 +504,8 @@ app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
         'Content-Type': 'application/json'
       }
     });
+
+    console.log('GraphQL response:', JSON.stringify(response.data, null, 2));
 
     if (response.data.data.translationsRegister.userErrors.length > 0) {
       console.error('GraphQL translation errors:', response.data.data.translationsRegister.userErrors);
