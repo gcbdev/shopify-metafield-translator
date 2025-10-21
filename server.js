@@ -265,7 +265,12 @@ async function translateJsonContent(jsonContent, sourceLanguage, targetLanguage)
         key.toLowerCase().includes(translateKey.toLowerCase())
       )) {
         console.log(`Translating field: ${key}`);
-        translated[key] = await translateJsonContent(value, sourceLanguage, targetLanguage);
+        // Translate the field name itself
+        const translatedKey = await translateText(key, sourceLanguage, targetLanguage);
+        const translatedValue = await translateJsonContent(value, sourceLanguage, targetLanguage);
+        
+        // Use the translated field name
+        translated[translatedKey] = translatedValue;
       } else if (skipFields.some(skipKey => 
         key.toLowerCase().includes(skipKey.toLowerCase())
       )) {
