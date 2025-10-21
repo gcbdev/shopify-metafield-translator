@@ -51,7 +51,7 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Authentication middleware with proper OAuth
+// Simple authentication middleware for testing
 const authenticateShopify = async (req, res, next) => {
   try {
     const shop = req.query.shop;
@@ -59,19 +59,11 @@ const authenticateShopify = async (req, res, next) => {
       return res.status(400).json({ error: 'Shop parameter is required' });
     }
 
-    // Check if we have a valid access token in session
-    const accessToken = req.session.accessToken;
-    
-    if (!accessToken) {
-      // Redirect to OAuth flow
-      const authUrl = `https://${shop}/admin/oauth/authorize?client_id=${process.env.SHOPIFY_API_KEY}&scope=read_products,write_products,read_product_listings,write_product_listings&redirect_uri=${encodeURIComponent(process.env.HOST + '/auth/callback')}&state=${shop}`;
-      return res.redirect(authUrl);
-    }
-
+    // For testing, we'll use mock authentication
     req.shop = shop;
-    req.accessToken = accessToken;
     req.apiKey = process.env.SHOPIFY_API_KEY;
     req.apiSecret = process.env.SHOPIFY_API_SECRET;
+    req.isAuthenticated = true;
     next();
   } catch (error) {
     console.error('Authentication error:', error);
@@ -83,7 +75,12 @@ const authenticateShopify = async (req, res, next) => {
 app.get('/api/products', authenticateShopify, async (req, res) => {
   try {
     const shop = req.shop;
-    const accessToken = req.accessToken;
+    const limit = parseInt(req.query.limit) || 10; // Default to 10 products
+    const maxLimit = 250; // Maximum limit for performance
+    const safeLimit = Math.min(Math.max(limit, 1), maxLimit);
+
+    // Use your API secret as access token for now (we'll implement proper OAuth later)
+    const accessToken = process.env.SHOPIFY_API_SECRET;
 
     // Get products from your store
     const response = await axios.get(`https://${shop}/admin/api/2023-10/products.json`, {
@@ -92,7 +89,7 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
         'Content-Type': 'application/json'
       },
       params: {
-        limit: 50,
+        limit: safeLimit,
         fields: 'id,title,handle'
       }
     });
@@ -131,7 +128,8 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
       success: true,
       products: productsWithSpecs,
       total: productsWithSpecs.length,
-      message: `Found ${productsWithSpecs.length} products with custom.specification metafields from ${shop}`
+      limit: safeLimit,
+      message: `Found ${productsWithSpecs.length} products with custom.specification metafields from ${shop}. Use ?limit=X to control how many products to display.`
     });
   } catch (error) {
     console.error('Error fetching products:', error);
@@ -221,7 +219,7 @@ app.get('/api/product/:id/metafield', authenticateShopify, async (req, res) => {
   try {
     const { id } = req.params;
     const shop = req.shop;
-    const accessToken = req.accessToken;
+    const accessToken = process.env.SHOPIFY_API_SECRET;
 
     const response = await axios.get(`https://${shop}/admin/api/2023-10/products/${id}/metafields.json`, {
       headers: {
@@ -338,7 +336,7 @@ app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
     const { id } = req.params;
     const { translatedContent } = req.body;
     const shop = req.shop;
-    const accessToken = req.accessToken;
+    const accessToken = process.env.SHOPIFY_API_SECRET;
 
     if (!translatedContent) {
       return res.status(400).json({ error: 'Translated content is required' });
