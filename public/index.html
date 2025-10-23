@@ -1268,7 +1268,7 @@
                 console.log(`Detected source language: ${sourceLanguage} for ${productTitle}`);
 
                 // FORCE translate to English (regardless of current language)
-                const response = await fetch('/api/translate-to-english', {
+                const response = await fetch(`/api/translate-to-english?shop=${shop}`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
