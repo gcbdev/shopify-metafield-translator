@@ -460,32 +460,20 @@ async function translateJsonContent(jsonContent, sourceLanguage, targetLanguage)
   } else if (jsonContent && typeof jsonContent === 'object') {
     const translated = {};
     for (const [key, value] of Object.entries(jsonContent)) {
-      // Skip technical fields but allow Brand, Type, Compatibility, General to be translated
-      const skipFields = ['id', 'sku', 'barcode', 'ean', 'upc', 'isbn', 'asin', 'url', 'link', 'image', 'images', 'video', 'videos', 'price', 'cost', 'weight', 'dimensions', 'size', 'color_code', 'hex', 'rgb', 'hsl', 'date', 'time', 'timestamp', 'created_at', 'updated_at', 'status', 'category', 'tags', 'keywords'];
+      // Skip only very technical fields that shouldn't be translated
+      const skipFields = ['id', 'sku', 'barcode', 'ean', 'upc', 'isbn', 'asin', 'url', 'link', 'image', 'images', 'video', 'videos', 'price', 'cost', 'weight', 'dimensions', 'size', 'color_code', 'hex', 'rgb', 'hsl', 'date', 'time', 'timestamp', 'created_at', 'updated_at', 'status'];
       
-      // Always translate Brand, Type, Compatibility, General fields and their values
-      const alwaysTranslateFields = ['brand', 'type', 'compatibility', 'general'];
-      
-      if (alwaysTranslateFields.some(translateKey => 
-        key.toLowerCase().includes(translateKey.toLowerCase())
-      )) {
-        console.log(`Translating field: ${key}`);
-        // Translate the field name itself
-        const translatedKey = await translateText(key, sourceLanguage, targetLanguage);
-        const translatedValue = await translateJsonContent(value, sourceLanguage, targetLanguage);
-        
-        // Use the translated field name
-        translated[translatedKey] = translatedValue;
-      } else if (skipFields.some(skipKey => 
+      if (skipFields.some(skipKey => 
         key.toLowerCase().includes(skipKey.toLowerCase())
       )) {
+        // Keep technical fields unchanged
         translated[key] = value;
       } else {
-        // For other fields, translate both the key name and the value
+        // Translate ALL other field names and their values (including "General specifications", "Stand properties", etc.)
+        console.log(`Translating field: ${key}`);
         const translatedKey = await translateText(key, sourceLanguage, targetLanguage);
         const translatedValue = await translateJsonContent(value, sourceLanguage, targetLanguage);
         
-        // Use only the translated key name
         translated[translatedKey] = translatedValue;
       }
     }
@@ -962,18 +950,83 @@ app.post('/api/bulk-translate-all', authenticateShopify, async (req, res) => {
           // Translate the JSON content
           const translatedContent = await translateJsonContent(jsonContent, sourceLanguage, targetLanguage);
 
-          // Update the metafield
-          await axios.put(`https://${shop}/admin/api/2023-10/metafields/${metafield.id}.json`, {
-            metafield: {
-              id: metafield.id,
-              value: JSON.stringify(translatedContent)
+          // Use Shopify's GraphQL Translations API to register French translation
+          // This fills the French field in Shopify's interface without modifying the original
+          const graphqlQuery = `
+            mutation CreateTranslation($id: ID!, $translations: [TranslationInput!]!) {
+              translationsRegister(resourceId: $id, translations: $translations) {
+                userErrors {
+                  message
+                  field
+                }
+                translations {
+                  locale
+                  key
+                  value
+                }
+              }
             }
-          }, {
-            headers: {
-              'X-Shopify-Access-Token': accessToken,
-              'Content-Type': 'application/json'
+          `;
+
+          // Generate digest for the metafield value (required for translation)
+          const crypto = require('crypto');
+          const originalMetafieldValue = metafield.value;
+          const translatableContentDigest = crypto.createHash('sha256').update(originalMetafieldValue).digest('hex');
+
+          const variables = {
+            id: `gid://shopify/Metafield/${metafield.id}`,
+            translations: [{
+              key: "value",
+              value: JSON.stringify(translatedContent),
+              locale: "fr",
+              translatableContentDigest: translatableContentDigest
+            }]
+          };
+
+          try {
+            const response = await axios.post(`https://${shop}/admin/api/2024-01/graphql.json`, {
+              query: graphqlQuery,
+              variables: variables
+            }, {
+              headers: {
+                'X-Shopify-Access-Token': accessToken,
+                'Content-Type': 'application/json'
+              }
+            });
+
+            if (response.data.errors) {
+              throw new Error(`GraphQL errors: ${JSON.stringify(response.data.errors)}`);
             }
-          });
+
+            if (response.data.data?.translationsRegister?.userErrors?.length > 0) {
+              throw new Error(`Translation errors: ${JSON.stringify(response.data.data.translationsRegister.userErrors)}`);
+            }
+
+            console.log('French translation registered successfully for product:', product.id);
+
+          } catch (graphqlError) {
+            console.error('GraphQL translation failed, trying fallback method:', graphqlError.message);
+            
+            // Fallback: Create a French locale metafield
+            await axios.post(`https://${shop}/admin/api/2023-10/metafields.json`, {
+              metafield: {
+                namespace: "custom",
+                key: "specification",
+                value: JSON.stringify(translatedContent),
+                type: "json",
+                owner_id: product.id,
+                owner_resource: "product",
+                locale: "fr"
+              }
+            }, {
+              headers: {
+                'X-Shopify-Access-Token': accessToken,
+                'Content-Type': 'application/json'
+              }
+            });
+            
+            console.log('French translation created using fallback method for product:', product.id);
+          }
 
           return { productId: product.id, status: 'success', title: product.title };
 
@@ -1099,18 +1152,83 @@ app.post('/api/bulk-translate-test', authenticateShopify, async (req, res) => {
         // Translate the JSON content
         const translatedContent = await translateJsonContent(jsonContent, sourceLanguage, targetLanguage);
 
-        // Update the metafield
-        await axios.put(`https://${shop}/admin/api/2023-10/metafields/${metafield.id}.json`, {
-          metafield: {
-            id: metafield.id,
-            value: JSON.stringify(translatedContent)
+        // Use Shopify's GraphQL Translations API to register French translation
+        // This fills the French field in Shopify's interface without modifying the original
+        const graphqlQuery = `
+          mutation CreateTranslation($id: ID!, $translations: [TranslationInput!]!) {
+            translationsRegister(resourceId: $id, translations: $translations) {
+              userErrors {
+                message
+                field
+              }
+              translations {
+                locale
+                key
+                value
+              }
+            }
           }
-        }, {
-          headers: {
-            'X-Shopify-Access-Token': accessToken,
-            'Content-Type': 'application/json'
+        `;
+
+        // Generate digest for the metafield value (required for translation)
+        const crypto = require('crypto');
+        const originalMetafieldValue = metafield.value;
+        const translatableContentDigest = crypto.createHash('sha256').update(originalMetafieldValue).digest('hex');
+
+        const variables = {
+          id: `gid://shopify/Metafield/${metafield.id}`,
+          translations: [{
+            key: "value",
+            value: JSON.stringify(translatedContent),
+            locale: "fr",
+            translatableContentDigest: translatableContentDigest
+          }]
+        };
+
+        try {
+          const response = await axios.post(`https://${shop}/admin/api/2024-01/graphql.json`, {
+            query: graphqlQuery,
+            variables: variables
+          }, {
+            headers: {
+              'X-Shopify-Access-Token': accessToken,
+              'Content-Type': 'application/json'
+            }
+          });
+
+          if (response.data.errors) {
+            throw new Error(`GraphQL errors: ${JSON.stringify(response.data.errors)}`);
           }
-        });
+
+          if (response.data.data?.translationsRegister?.userErrors?.length > 0) {
+            throw new Error(`Translation errors: ${JSON.stringify(response.data.data.translationsRegister.userErrors)}`);
+          }
+
+          console.log('French translation registered successfully for product:', product.id);
+
+        } catch (graphqlError) {
+          console.error('GraphQL translation failed, trying fallback method:', graphqlError.message);
+          
+          // Fallback: Create a French locale metafield
+          await axios.post(`https://${shop}/admin/api/2023-10/metafields.json`, {
+            metafield: {
+              namespace: "custom",
+              key: "specification",
+              value: JSON.stringify(translatedContent),
+              type: "json",
+              owner_id: product.id,
+              owner_resource: "product",
+              locale: "fr"
+            }
+          }, {
+            headers: {
+              'X-Shopify-Access-Token': accessToken,
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          console.log('French translation created using fallback method for product:', product.id);
+        }
 
         results.details.push({ productId: product.id, status: 'success', title: product.title });
         results.success++;
