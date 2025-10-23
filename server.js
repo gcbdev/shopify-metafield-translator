@@ -600,18 +600,26 @@ app.get('/api/metafield/:id/french', async (req, res) => {
     const metafieldData = graphqlResponse.data.data?.metafield;
     if (metafieldData) {
       console.log(`✅ Found metafield: ${metafieldData.namespace}.${metafieldData.key}`);
-      const translations = metafieldData.translations || [];
-      console.log(`🌍 Found ${translations.length} translations:`, translations);
+      console.log(`🔍 Metafield data structure:`, Object.keys(metafieldData));
       
-      const frenchTranslation = translations.find(t => t.locale === 'FR');
-      
-      if (frenchTranslation) {
-        console.log(`✅ Found French translation:`, frenchTranslation.value.substring(0, 100) + '...');
-        res.json({
-          success: true,
-          frenchContent: frenchTranslation.value
-        });
-        return;
+      // Check if translations field exists
+      if (metafieldData.translations) {
+        const translations = metafieldData.translations || [];
+        console.log(`🌍 Found ${translations.length} translations:`, translations);
+        
+        const frenchTranslation = translations.find(t => t.locale === 'FR');
+        
+        if (frenchTranslation) {
+          console.log(`✅ Found French translation:`, frenchTranslation.value.substring(0, 100) + '...');
+          res.json({
+            success: true,
+            frenchContent: frenchTranslation.value
+          });
+          return;
+        }
+      } else {
+        console.log(`❌ No translations field found in metafield data`);
+        console.log(`📊 Available fields:`, Object.keys(metafieldData));
       }
     }
 
@@ -781,6 +789,29 @@ app.get('/api/metafield/:id/french', async (req, res) => {
       }
     }
 
+    // Try REST API approach as final fallback
+    console.log(`🔍 Trying REST API approach for French content...`);
+    
+    try {
+      // Try to get French metafield directly via REST API
+      const frenchMetafieldResponse = await axios.get(`https://${shop}/admin/api/2023-10/metafields/${id}.json?locale=fr`, {
+        headers: {
+          'X-Shopify-Access-Token': accessToken
+        }
+      });
+
+      if (frenchMetafieldResponse.data.metafield) {
+        console.log(`✅ Found French metafield via REST API`);
+        res.json({
+          success: true,
+          frenchContent: frenchMetafieldResponse.data.metafield.value
+        });
+        return;
+      }
+    } catch (restError) {
+      console.log(`❌ REST API approach failed:`, restError.response?.data || restError.message);
+    }
+
     console.log(`❌ No French translation found for metafield ${id}`);
     res.json({
       success: false,
@@ -789,7 +820,8 @@ app.get('/api/metafield/:id/french', async (req, res) => {
         productId: productId,
         metafieldId: id,
         availableMetafields: allMetafields.map(m => `${m.namespace}.${m.key}`),
-        translations: translations
+        graphqlErrors: graphqlResponse.data.errors || null,
+        metafieldStructure: metafieldData ? Object.keys(metafieldData) : null
       }
     });
   } catch (error) {
@@ -798,6 +830,57 @@ app.get('/api/metafield/:id/french', async (req, res) => {
       success: false,
       error: 'Failed to get French content',
       details: error.response?.data || error.message
+    });
+  }
+});
+
+// Simple test endpoint to check GraphQL access
+app.get('/api/test-graphql/:metafieldId', async (req, res) => {
+  try {
+    const { metafieldId } = req.params;
+    const shop = req.query.shop;
+    const accessToken = process.env.SHOPIFY_ACCESS_TOKEN;
+
+    console.log(`🧪 TEST: Testing GraphQL access for metafield ${metafieldId}`);
+
+    // Simple GraphQL test
+    const testQuery = `
+      query TestMetafield($id: ID!) {
+        metafield(id: $id) {
+          id
+          namespace
+          key
+          value
+        }
+      }
+    `;
+
+    const response = await axios.post(`https://${shop}/admin/api/2023-10/graphql.json`, {
+      query: testQuery,
+      variables: {
+        id: `gid://shopify/Metafield/${metafieldId}`
+      }
+    }, {
+      headers: {
+        'X-Shopify-Access-Token': accessToken,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    res.json({
+      success: true,
+      test: {
+        metafieldId: metafieldId,
+        shop: shop,
+        graphqlResponse: response.data,
+        hasAccessToken: !!accessToken
+      }
+    });
+  } catch (error) {
+    console.error('Test GraphQL error:', error.response?.data || error.message);
+    res.status(500).json({
+      success: false,
+      error: error.response?.data || error.message
     });
   }
 });
