@@ -146,15 +146,44 @@
             margin-bottom: 10px;
         }
         
+        .content-sections {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .content-section {
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .content-section h4 {
+            font-size: 12px;
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: #374151;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
         .metafield-preview {
             background: #f9fafb;
             padding: 8px;
             border-radius: 4px;
             font-family: monospace;
             font-size: 11px;
-            max-height: 60px;
+            max-height: 80px;
             overflow-y: auto;
             margin-bottom: 8px;
+            border: 1px solid #e5e7eb;
+        }
+        
+        .original-content {
+            border-left: 3px solid #3b82f6;
+        }
+        
+        .french-content {
+            border-left: 3px solid #10b981;
         }
         
         .product-actions {
@@ -664,15 +693,24 @@
                         const metafieldId = metafield ? metafield.id : '';
                         console.log(`Product ${product.title}: metafieldId = ${metafieldId}, metafields =`, product.metafields);
                         return `
-                        <div class="product-card" data-metafield-id="${metafieldId}">
+                        <div class="product-card" data-metafield-id="${metafieldId}" data-product-id="${product.id}">
                             <div class="product-info">
                             <div class="product-title">${product.title}</div>
                             <div class="product-handle">${product.handle}</div>
-                            <div class="metafield-preview">${getMetafieldPreview(product)}</div>
+                            <div class="content-sections">
+                                <div class="content-section">
+                                    <h4>Original Content:</h4>
+                                    <div class="metafield-preview original-content">${getMetafieldPreview(product)}</div>
+                                </div>
+                                <div class="content-section">
+                                    <h4>French Content:</h4>
+                                    <div class="metafield-preview french-content" id="french-content-${product.id}">Loading French content...</div>
+                                </div>
+                            </div>
                             </div>
                             <div class="product-actions">
-                            <button class="btn" onclick="testTranslateProduct(${product.id})">Test French Translation</button>
-                            <button class="btn btn-secondary" onclick="translateProduct(${product.id})">Translate to French</button>
+                            <button class="btn" onclick="viewOriginalContent(${product.id})">View Original Content</button>
+                            <button class="btn btn-secondary" onclick="viewFrenchContent(${product.id})">View French Content</button>
                         </div>
                 </div>
             `;
@@ -683,6 +721,8 @@
             // Update product count and pagination
             if (products.length > 0) {
                 updateProductCount();
+                // Load French content for all products
+                loadFrenchContentForAllProducts();
             }
         }
         
@@ -1214,6 +1254,130 @@
             }
         }
         
+        // Function to view original content in modal
+        async function viewOriginalContent(productId) {
+            try {
+                const product = products.find(p => p.id === productId);
+                if (!product) {
+                    showError('Product not found');
+                    return;
+                }
+
+                const metafield = product.metafields?.find(m => m.namespace === 'custom' && m.key === 'specification');
+                if (!metafield) {
+                    showError('No metafield found for this product');
+                    return;
+                }
+
+                document.getElementById('modal-product-info').innerHTML = `
+                    <p><strong>Product:</strong> ${product.title}</p>
+                    <p><strong>Handle:</strong> ${product.handle}</p>
+                    <p><strong>Content Type:</strong> <span style="color: #3b82f6;">ORIGINAL CONTENT</span></p>
+                `;
+
+                document.getElementById('original-content').value = metafield.value;
+                document.getElementById('translated-content').value = '';
+                document.getElementById('translated-content').readOnly = true;
+                document.getElementById('translated-content').placeholder = 'Original content only - no translation available';
+
+                // Hide all buttons except close
+                document.getElementById('save-btn').style.display = 'none';
+                document.getElementById('promote-btn').style.display = 'none';
+
+                document.getElementById('translation-modal').style.display = 'block';
+            } catch (error) {
+                console.error('Error viewing original content:', error);
+                showError('Failed to load original content');
+            }
+        }
+
+        // Function to view French content in modal
+        async function viewFrenchContent(productId) {
+            try {
+                const product = products.find(p => p.id === productId);
+                if (!product) {
+                    showError('Product not found');
+                    return;
+                }
+
+                const metafield = product.metafields?.find(m => m.namespace === 'custom' && m.key === 'specification');
+                if (!metafield) {
+                    showError('No metafield found for this product');
+                    return;
+                }
+
+                // Try to get French translation
+                const response = await fetch(`/api/metafield/${metafield.id}/french?shop=${shop}`);
+                const data = await response.json();
+
+                document.getElementById('modal-product-info').innerHTML = `
+                    <p><strong>Product:</strong> ${product.title}</p>
+                    <p><strong>Handle:</strong> ${product.handle}</p>
+                    <p><strong>Content Type:</strong> <span style="color: #10b981;">FRENCH CONTENT</span></p>
+                `;
+
+                document.getElementById('original-content').value = metafield.value;
+                
+                if (data.success && data.frenchContent) {
+                    document.getElementById('translated-content').value = data.frenchContent;
+                } else {
+                    document.getElementById('translated-content').value = 'No French translation available yet';
+                }
+                
+                document.getElementById('translated-content').readOnly = true;
+                document.getElementById('translated-content').placeholder = 'French translation content';
+
+                // Hide all buttons except close
+                document.getElementById('save-btn').style.display = 'none';
+                document.getElementById('promote-btn').style.display = 'none';
+
+                document.getElementById('translation-modal').style.display = 'block';
+            } catch (error) {
+                console.error('Error viewing French content:', error);
+                showError('Failed to load French content');
+            }
+        }
+
+        // Function to load French content for all products on the current page
+        async function loadFrenchContentForAllProducts() {
+            const products = document.querySelectorAll('.product-card');
+            
+            for (const productCard of products) {
+                const productId = productCard.dataset.productId;
+                const metafieldId = productCard.dataset.metafieldId;
+                
+                if (!metafieldId) continue;
+                
+                try {
+                    const response = await fetch(`/api/metafield/${metafieldId}/french?shop=${shop}`);
+                    const data = await response.json();
+                    
+                    const frenchContentDiv = document.getElementById(`french-content-${productId}`);
+                    if (frenchContentDiv) {
+                        if (data.success && data.frenchContent) {
+                            try {
+                                const frenchJson = JSON.parse(data.frenchContent);
+                                frenchContentDiv.textContent = JSON.stringify(frenchJson, null, 2).substring(0, 200) + '...';
+                            } catch (e) {
+                                frenchContentDiv.textContent = data.frenchContent.substring(0, 200) + '...';
+                            }
+                        } else {
+                            frenchContentDiv.textContent = 'No French translation available';
+                            frenchContentDiv.style.color = '#9ca3af';
+                            frenchContentDiv.style.fontStyle = 'italic';
+                        }
+                    }
+                } catch (error) {
+                    console.error(`Error loading French content for product ${productId}:`, error);
+                    const frenchContentDiv = document.getElementById(`french-content-${productId}`);
+                    if (frenchContentDiv) {
+                        frenchContentDiv.textContent = 'Error loading French content';
+                        frenchContentDiv.style.color = '#ef4444';
+                    }
+                }
+            }
+        }
+
         // Function to detect the language of JSON content
     function detectLanguage(jsonContent) {
         if (typeof jsonContent === 'string') {

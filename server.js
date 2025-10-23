@@ -538,6 +538,79 @@ app.get('/api/metafield/:id', authenticateShopify, async (req, res) => {
   }
 });
 
+// Get French content for a metafield
+app.get('/api/metafield/:id/french', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const shop = req.query.shop;
+    const accessToken = process.env.SHOPIFY_ACCESS_TOKEN;
+
+    if (!shop || !accessToken) {
+      return res.status(400).json({ success: false, error: 'Missing shop or access token' });
+    }
+
+    console.log(`Getting French content for metafield ${id} for shop ${shop}`);
+
+    // First get the original metafield to find the product ID
+    const metafieldResponse = await axios.get(`https://${shop}/admin/api/2023-10/metafields/${id}.json`, {
+      headers: {
+        'X-Shopify-Access-Token': accessToken
+      }
+    });
+
+    const metafield = metafieldResponse.data.metafield;
+    const productId = metafield.owner_id;
+
+    // Try to get French translation using GraphQL
+    const graphqlQuery = `
+      query GetTranslations($id: ID!) {
+        product(id: $id) {
+          metafield(namespace: "custom", key: "specification") {
+            translations(locales: [FR]) {
+              locale
+              value
+            }
+          }
+        }
+      }
+    `;
+
+    const graphqlResponse = await axios.post(`https://${shop}/admin/api/2023-10/graphql.json`, {
+      query: graphqlQuery,
+      variables: {
+        id: `gid://shopify/Product/${productId}`
+      }
+    }, {
+      headers: {
+        'X-Shopify-Access-Token': accessToken,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    const translations = graphqlResponse.data.data?.product?.metafield?.translations || [];
+    const frenchTranslation = translations.find(t => t.locale === 'FR');
+
+    if (frenchTranslation) {
+      res.json({
+        success: true,
+        frenchContent: frenchTranslation.value
+      });
+    } else {
+      res.json({
+        success: false,
+        error: 'No French translation found'
+      });
+    }
+  } catch (error) {
+    console.error('Error getting French content:', error.response?.data || error.message);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get French content',
+      details: error.response?.data || error.message
+    });
+  }
+});
+
 // Test translation API endpoint (preview only)
 app.post('/api/test-translate', async (req, res) => {
   try {
