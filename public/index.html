@@ -439,16 +439,21 @@
                 <button class="btn" onclick="bulkTranslateCurrentPage()" id="bulk-translate-current-btn">Translate Current Page to French</button>
                 <button class="btn" onclick="bulkTranslateTest()" id="bulk-translate-test-btn" style="background-color: #f59e0b;">🧪 Test Bulk Translation (10 products)</button>
                 <button class="btn" onclick="bulkTranslateAllProducts()" id="bulk-translate-all-btn" style="background-color: #dc2626; font-weight: bold;">🚀 Translate ALL Products to French</button>
+                <button class="btn" onclick="stopBulkTranslation()" id="stop-bulk-translation" style="background-color: #ef4444; font-weight: bold; display: none;">⏹️ Stop Translation</button>
             </div>
         </div>
         
         <div id="progress-container" class="progress-container" style="display: none;">
-            <h3>Bulk Translation Progress</h3>
+            <h3>🔄 Bulk Translation Progress</h3>
             <div class="progress-bar">
                 <div id="progress-fill" class="progress-fill" style="width: 0%"></div>
             </div>
             <div id="progress-text" class="progress-text">0% Complete</div>
             <div id="progress-details" style="text-align: center; color: #6b7280; margin-top: 10px;"></div>
+            <div class="progress-info" style="margin-top: 15px; padding: 10px; background: #f0f9ff; border-radius: 4px; border-left: 4px solid #0ea5e9;">
+                <p style="margin: 5px 0; font-size: 14px;"><strong>What's happening:</strong> The app is filling the French translation field for each product without modifying the original English content.</p>
+                <p style="margin: 5px 0; font-size: 14px;"><strong>Note:</strong> You can stop the translation at any time using the "Stop Translation" button.</p>
+            </div>
         </div>
         
         <div id="products-container">
@@ -491,6 +496,8 @@
         let previousPageInfo = null; // For going back
         let pageHistory = []; // Track page history for proper back navigation
         let currentPageIndex = 0; // Current position in page history
+        let bulkTranslationActive = false; // Track if bulk translation is running
+        let bulkTranslationController = null; // AbortController for stopping bulk translation
         
         // Get URL parameters
         const urlParams = new URLSearchParams(window.location.search);
@@ -944,9 +951,17 @@
         }
         
         async function bulkTranslateAllProducts() {
+            if (bulkTranslationActive) {
+                showError('Bulk translation is already running!');
+                return;
+            }
+
             if (!confirm(`⚠️ WARNING: This will translate ALL ${totalProducts} products in your store to French!\n\nThis is a major operation that will:\n- Process every single product\n- Translate all metafields to French\n- Take a significant amount of time\n- Cannot be easily undone\n\nAre you absolutely sure you want to proceed?`)) {
                 return;
             }
+            
+            bulkTranslationActive = true;
+            bulkTranslationController = new AbortController();
             
             const progressContainer = document.getElementById('progress-container');
             const progressFill = document.getElementById('progress-fill');
@@ -975,7 +990,8 @@
                     body: JSON.stringify({
                         targetLanguage: 'fr',
                         sourceLanguage: 'en'
-                    })
+                    }),
+                    signal: bulkTranslationController.signal
                 });
                 
                 console.log('Response received:', response.status);
@@ -1009,14 +1025,52 @@
                 }
                 
             } catch (error) {
-                console.error('Bulk translation error:', error);
-                showError('Bulk translation error: ' + error.message);
-                progressText.textContent = 'Bulk translation failed';
-                progressDetails.textContent = error.message;
+                if (error.name === 'AbortError') {
+                    progressText.textContent = 'Bulk translation stopped by user';
+                    progressDetails.textContent = 'Translation was cancelled';
+                    showError('Bulk translation was stopped by user.');
+                } else {
+                    console.error('Bulk translation error:', error);
+                    showError('Bulk translation error: ' + error.message);
+                    progressText.textContent = 'Bulk translation failed';
+                    progressDetails.textContent = error.message;
+                }
             } finally {
+                bulkTranslationActive = false;
+                bulkTranslationController = null;
+                
                 // Re-enable buttons
                 document.querySelectorAll('.btn').forEach(btn => btn.disabled = false);
+                
+                // Hide stop button
+                const stopButton = document.getElementById('stop-bulk-translation');
+                if (stopButton) {
+                    stopButton.style.display = 'none';
+                }
+                
+                // Hide progress container after 5 seconds
+                setTimeout(() => {
+                    progressContainer.style.display = 'none';
+                }, 5000);
             }
+        }
+        
+        function stopBulkTranslation() {
+            if (bulkTranslationController) {
+                bulkTranslationController.abort();
+                showError('Stopping bulk translation...');
+            }
+        }
+        
+        function updateBulkProgress(processed, total, status, details) {
+            const progressFill = document.getElementById('progress-fill');
+            const progressText = document.getElementById('progress-text');
+            const progressDetails = document.getElementById('progress-details');
+            
+            const percentage = Math.round((processed / total) * 100);
+            progressFill.style.width = `${percentage}%`;
+            progressText.textContent = status;
+            progressDetails.textContent = details;
         }
         
         async function bulkTranslateTest() {
