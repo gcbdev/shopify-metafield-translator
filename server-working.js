@@ -89,10 +89,10 @@ app.get('/api/products', (req, res) => {
     success: true,
     products: mockProducts,
     total: mockProducts.length,
-    limit: 500,
+    limit: 250,
     page: 1,
     hasNextPage: false,
-    message: `Found ${mockProducts.length} products with custom.specification metafields. Showing page 1 with 500 products per page.`
+    message: `Found ${mockProducts.length} products with custom.specification metafields. Showing page 1 with 250 products per page (max 250 per Shopify API).`
   });
 });
 

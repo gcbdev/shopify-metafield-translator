@@ -75,9 +75,9 @@ const authenticateShopify = async (req, res, next) => {
 app.get('/api/products', authenticateShopify, async (req, res) => {
   try {
     const shop = req.shop;
-    const limit = parseInt(req.query.limit) || 500; // Default to 500 products
+    const limit = parseInt(req.query.limit) || 250; // Default to 250 products (Shopify's max)
     const page = parseInt(req.query.page) || 1; // Default to page 1
-    const maxLimit = 500; // Maximum limit for performance
+    const maxLimit = 250; // Maximum limit for Shopify API
     const safeLimit = Math.min(Math.max(limit, 1), maxLimit);
     const offset = (page - 1) * safeLimit;
     const accessToken = req.accessToken;
@@ -156,7 +156,7 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
       page: page,
       hasNextPage: response.data.products.length === safeLimit,
       nextPageInfo: response.headers['link'] ? response.headers['link'].match(/<([^>]+)>; rel="next"/)?.[1] : null,
-      message: `Found ${productsWithSpecs.length} products with custom.specification metafields from ${shop}. Showing page ${page} with ${safeLimit} products per page.`
+      message: `Found ${productsWithSpecs.length} products with custom.specification metafields from ${shop}. Showing page ${page} with ${safeLimit} products per page (max 250 per Shopify API).`
     });
   } catch (error) {
     console.error('=== ERROR FETCHING PRODUCTS ===');

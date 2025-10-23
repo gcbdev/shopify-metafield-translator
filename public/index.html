@@ -254,7 +254,7 @@
                 <label>Target Language: French</label>
                 <input type="hidden" id="target-language" value="fr">
             </div>
-            <button class="btn" onclick="loadProducts()">Load Products (500 per batch)</button>
+            <button class="btn" onclick="loadProducts()">Load Products (250 per batch)</button>
             <button class="btn btn-secondary" onclick="translateAll()">Translate All to French</button>
         </div>
         
@@ -295,7 +295,7 @@
         let currentMetafieldId = null;
         let currentPage = 1;
         let totalProducts = 0;
-        let productsPerPage = 500;
+        let productsPerPage = 250;
         
         // Get URL parameters
         const urlParams = new URLSearchParams(window.location.search);
