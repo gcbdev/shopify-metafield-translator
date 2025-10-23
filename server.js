@@ -569,8 +569,13 @@ app.post('/api/test-translate', async (req, res) => {
       return res.status(400).json({ error: 'Metafield content is not valid JSON' });
     }
 
-    // Translate the JSON content
-    const translatedContent = await translateJsonContent(jsonContent, sourceLanguage, targetLanguage);
+    // STEP 1: ALWAYS translate original content to English first
+    console.log('STEP 1: Translating original content to English first...');
+    const englishContent = await translateJsonContent(jsonContent, sourceLanguage, 'en');
+    
+    // STEP 2: Translate English content to target language
+    console.log(`STEP 2: Translating English content to ${targetLanguage}...`);
+    const translatedContent = await translateJsonContent(englishContent, 'en', targetLanguage);
 
     res.json({
       success: true,
@@ -618,8 +623,13 @@ app.post('/api/translate', async (req, res) => {
       return res.status(400).json({ error: 'Metafield content is not valid JSON' });
     }
 
-    // Translate the JSON content
-    const translatedContent = await translateJsonContent(jsonContent, sourceLanguage, targetLanguage);
+    // STEP 1: ALWAYS translate original content to English first
+    console.log('STEP 1: Translating original content to English first...');
+    const englishContent = await translateJsonContent(jsonContent, sourceLanguage, 'en');
+    
+    // STEP 2: Translate English content to target language
+    console.log(`STEP 2: Translating English content to ${targetLanguage}...`);
+    const translatedContent = await translateJsonContent(englishContent, 'en', targetLanguage);
 
     res.json({
       success: true,
@@ -666,8 +676,8 @@ app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
       console.error('API permission check failed:', permError.response?.data || permError.message);
     }
 
-    // Use Shopify's GraphQL Translations API to register French translation
-    // Based on: https://community.shopify.com/t/graphql-api-and-translation/158432
+    // Use Shopify's GraphQL Translations API to fill the French field
+    // This fills the French field in Shopify's interface without modifying the original
     const graphqlQuery = `
       mutation CreateTranslation($id: ID!, $translations: [TranslationInput!]!) {
         translationsRegister(resourceId: $id, translations: $translations) {
@@ -685,10 +695,9 @@ app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
     `;
 
     // Generate digest for the metafield value (required for translation)
-    // The digest should be of the ORIGINAL content, not the translated content
     const crypto = require('crypto');
     
-    // First, get the original metafield content to generate the correct digest
+    // Get the original metafield content to generate the correct digest
     const metafieldResponse = await axios.get(`https://${shop}/admin/api/2023-10/metafields/${id}.json`, {
       headers: {
         'X-Shopify-Access-Token': accessToken,
@@ -701,13 +710,13 @@ app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
     
     console.log('Original metafield value:', originalMetafieldValue);
     console.log('Generated digest from original:', translatableContentDigest);
-    console.log('Translated content:', JSON.stringify(translatedContent));
+    console.log('French content to fill:', JSON.stringify(frenchContent));
 
     const variables = {
       id: `gid://shopify/Metafield/${id}`,
       translations: [{
         key: "value",
-        value: JSON.stringify(translatedContent),
+        value: JSON.stringify(frenchContent),
         locale: "fr",
         translatableContentDigest: translatableContentDigest
       }]
@@ -730,9 +739,6 @@ app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
     // Check for GraphQL errors
     if (response.data.errors) {
       console.error('GraphQL errors:', response.data.errors);
-      console.error('Full GraphQL response:', JSON.stringify(response.data, null, 2));
-      
-      // Don't return here - let the fallback method try
       throw new Error(`GraphQL errors: ${JSON.stringify(response.data.errors)}`);
     }
 
@@ -750,7 +756,7 @@ app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
       res.json({
         success: true,
         translation: response.data.data.translationsRegister.translations[0],
-        message: 'French translation registered with Translate & Adapt successfully!'
+        message: 'French field filled successfully! Original content remains unchanged.'
       });
     } else {
       console.error('Unexpected response structure:', response.data);
@@ -913,10 +919,15 @@ app.post('/api/bulk-translate-all', authenticateShopify, async (req, res) => {
             return { productId: product.id, status: 'error', reason: 'Invalid JSON in metafield', title: product.title };
           }
 
-          // Translate the JSON content
-          const translatedContent = await translateJsonContent(jsonContent, sourceLanguage, targetLanguage);
+          // STEP 1: ALWAYS translate original content to English first
+          console.log(`STEP 1: Translating original content to English for product ${product.id}...`);
+          const englishContent = await translateJsonContent(jsonContent, sourceLanguage, 'en');
+          
+          // STEP 2: Translate English content to French
+          console.log(`STEP 2: Translating English content to French for product ${product.id}...`);
+          const frenchContent = await translateJsonContent(englishContent, 'en', 'fr');
 
-          // Use Shopify's GraphQL Translations API to register French translation
+          // Use Shopify's GraphQL Translations API to fill the French field
           // This fills the French field in Shopify's interface without modifying the original
           const graphqlQuery = `
             mutation CreateTranslation($id: ID!, $translations: [TranslationInput!]!) {
@@ -943,7 +954,7 @@ app.post('/api/bulk-translate-all', authenticateShopify, async (req, res) => {
             id: `gid://shopify/Metafield/${metafield.id}`,
             translations: [{
               key: "value",
-              value: JSON.stringify(translatedContent),
+              value: JSON.stringify(frenchContent),
               locale: "fr",
               translatableContentDigest: translatableContentDigest
             }]
@@ -964,31 +975,33 @@ app.post('/api/bulk-translate-all', authenticateShopify, async (req, res) => {
         }
       });
 
-            console.log('GraphQL response:', JSON.stringify(response.data, null, 2));
+            console.log(`GraphQL response for product ${product.id}:`, response.status);
 
             if (response.data.errors) {
-              console.error('GraphQL errors:', response.data.errors);
+              console.error(`GraphQL errors for product ${product.id}:`, response.data.errors);
               throw new Error(`GraphQL errors: ${JSON.stringify(response.data.errors)}`);
             }
 
             if (response.data.data?.translationsRegister?.userErrors?.length > 0) {
-              console.error('Translation user errors:', response.data.data.translationsRegister.userErrors);
-              throw new Error(`Translation errors: ${JSON.stringify(response.data.data.translationsRegister.userErrors)}`);
+              console.error(`GraphQL translation errors for product ${product.id}:`, response.data.data.translationsRegister.userErrors);
+              throw new Error(`Translation registration failed: ${JSON.stringify(response.data.data.translationsRegister.userErrors)}`);
             }
 
             if (response.data.data?.translationsRegister?.translations?.length > 0) {
-              console.log('French translation registered successfully for product:', product.id);
-              console.log('Registered translations:', response.data.data.translationsRegister.translations);
+              console.log(`✅ French field filled for product ${product.id}`);
+              return {
+                productId: product.id,
+                status: 'success',
+                title: product.title,
+                translation: response.data.data.translationsRegister.translations[0]
+              };
             } else {
               throw new Error('No translations were registered');
             }
 
           } catch (graphqlError) {
-            console.error('GraphQL translation failed:', graphqlError.message);
-            console.error('Full error:', graphqlError);
-            
-            // Instead of fallback, throw error to prevent modifying original metafield
-            throw new Error(`Translation failed for product ${product.id}: ${graphqlError.message}`);
+            console.error(`GraphQL translation failed for product ${product.id}:`, graphqlError.message);
+            throw graphqlError;
           }
 
           return { productId: product.id, status: 'success', title: product.title };
@@ -1112,10 +1125,15 @@ app.post('/api/bulk-translate-test', authenticateShopify, async (req, res) => {
           continue;
         }
 
-        // Translate the JSON content
-        const translatedContent = await translateJsonContent(jsonContent, sourceLanguage, targetLanguage);
+        // STEP 1: ALWAYS translate original content to English first
+        console.log(`STEP 1: Translating original content to English for product ${product.id}...`);
+        const englishContent = await translateJsonContent(jsonContent, sourceLanguage, 'en');
+        
+        // STEP 2: Translate English content to French
+        console.log(`STEP 2: Translating English content to French for product ${product.id}...`);
+        const frenchContent = await translateJsonContent(englishContent, 'en', 'fr');
 
-        // Use Shopify's GraphQL Translations API to register French translation
+        // Use Shopify's GraphQL Translations API to fill the French field
         // This fills the French field in Shopify's interface without modifying the original
         const graphqlQuery = `
           mutation CreateTranslation($id: ID!, $translations: [TranslationInput!]!) {
@@ -1142,7 +1160,7 @@ app.post('/api/bulk-translate-test', authenticateShopify, async (req, res) => {
           id: `gid://shopify/Metafield/${metafield.id}`,
           translations: [{
             key: "value",
-            value: JSON.stringify(translatedContent),
+            value: JSON.stringify(frenchContent),
             locale: "fr",
             translatableContentDigest: translatableContentDigest
           }]
@@ -1163,35 +1181,35 @@ app.post('/api/bulk-translate-test', authenticateShopify, async (req, res) => {
             }
           });
 
-          console.log('GraphQL response:', JSON.stringify(response.data, null, 2));
+          console.log(`GraphQL response for product ${product.id}:`, response.status);
 
           if (response.data.errors) {
-            console.error('GraphQL errors:', response.data.errors);
+            console.error(`GraphQL errors for product ${product.id}:`, response.data.errors);
             throw new Error(`GraphQL errors: ${JSON.stringify(response.data.errors)}`);
           }
 
           if (response.data.data?.translationsRegister?.userErrors?.length > 0) {
-            console.error('Translation user errors:', response.data.data.translationsRegister.userErrors);
-            throw new Error(`Translation errors: ${JSON.stringify(response.data.data.translationsRegister.userErrors)}`);
+            console.error(`GraphQL translation errors for product ${product.id}:`, response.data.data.translationsRegister.userErrors);
+            throw new Error(`Translation registration failed: ${JSON.stringify(response.data.data.translationsRegister.userErrors)}`);
           }
 
           if (response.data.data?.translationsRegister?.translations?.length > 0) {
-            console.log('French translation registered successfully for product:', product.id);
-            console.log('Registered translations:', response.data.data.translationsRegister.translations);
+            console.log(`✅ French field filled for product ${product.id}`);
+            results.details.push({ 
+              productId: product.id, 
+              status: 'success', 
+              title: product.title,
+              translation: response.data.data.translationsRegister.translations[0]
+            });
+            results.success++;
           } else {
             throw new Error('No translations were registered');
           }
 
         } catch (graphqlError) {
-          console.error('GraphQL translation failed:', graphqlError.message);
-          console.error('Full error:', graphqlError);
-          
-          // Instead of fallback, throw error to prevent modifying original metafield
-          throw new Error(`Translation failed for product ${product.id}: ${graphqlError.message}`);
+          console.error(`GraphQL translation failed for product ${product.id}:`, graphqlError.message);
+          throw graphqlError;
         }
-
-        results.details.push({ productId: product.id, status: 'success', title: product.title });
-        results.success++;
 
       } catch (error) {
         console.error(`Error translating product ${product.id}:`, error.message);
