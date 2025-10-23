@@ -440,6 +440,7 @@
                 <button class="btn" onclick="fillFrenchField()" id="fill-french-field-btn" style="background-color: #10b981; font-weight: bold;">🌍 Fill French Field (English → French)</button>
                 <button class="btn" onclick="forceTranslateAllToEnglish()" id="force-translate-all-english-btn" style="background-color: #dc2626; font-weight: bold;">🚀 FORCE Translate ALL to English</button>
                 <button class="btn" onclick="fillAllFrenchFields()" id="fill-all-french-fields-btn" style="background-color: #059669; font-weight: bold;">🌍 Fill ALL French Fields</button>
+                <button class="btn" onclick="showResumeOption()" id="resume-bulk-btn" style="background-color: #7c3aed; font-weight: bold;">📋 Resume Translation</button>
                 <button class="btn" onclick="stopBulkTranslation()" id="stop-bulk-translation" style="background-color: #ef4444; font-weight: bold; display: none;">⏹️ Stop Translation</button>
             </div>
         </div>
@@ -1064,9 +1065,64 @@
         }
         
         function stopBulkTranslation() {
-            if (bulkTranslationController) {
-                bulkTranslationController.abort();
-                showError('Stopping bulk translation...');
+            // Set flag to stop bulk operations
+            window.shouldStopBulkTranslation = true;
+            
+            // Show stop message
+            document.getElementById('progress-text').textContent = 'Stopping translation...';
+            document.getElementById('progress-details').textContent = 'Please wait while we stop the current operation...';
+            
+            console.log('🛑 Stop signal sent - bulk translation will stop after current product');
+        }
+
+        // Resume system functions
+        function saveBulkProgress(operation, processedCount, totalProducts, successCount, errorCount, currentPage) {
+            const progressData = {
+                operation: operation, // 'force-english' or 'fill-french'
+                processedCount: processedCount,
+                totalProducts: totalProducts,
+                successCount: successCount,
+                errorCount: errorCount,
+                currentPage: currentPage,
+                timestamp: Date.now(),
+                shop: shop
+            };
+            
+            localStorage.setItem('bulkTranslationProgress', JSON.stringify(progressData));
+            console.log('💾 Progress saved:', progressData);
+        }
+
+        function getBulkProgress() {
+            const saved = localStorage.getItem('bulkTranslationProgress');
+            if (saved) {
+                const progressData = JSON.parse(saved);
+                // Check if progress is from same shop and recent (within 24 hours)
+                if (progressData.shop === shop && (Date.now() - progressData.timestamp) < 24 * 60 * 60 * 1000) {
+                    return progressData;
+                }
+            }
+            return null;
+        }
+
+        function clearBulkProgress() {
+            localStorage.removeItem('bulkTranslationProgress');
+            console.log('🗑️ Progress cleared');
+        }
+
+        function showResumeOption() {
+            const progress = getBulkProgress();
+            if (progress) {
+                const confirmResume = confirm(`📋 RESUME BULK TRANSLATION\n\nFound incomplete bulk translation:\n\nOperation: ${progress.operation === 'force-english' ? 'FORCE Translate to English' : 'Fill French Fields'}\nProgress: ${progress.processedCount}/${progress.totalProducts} products\nSuccess: ${progress.successCount} | Errors: ${progress.errorCount}\n\nDo you want to resume from where you left off?`);
+                
+                if (confirmResume) {
+                    if (progress.operation === 'force-english') {
+                        resumeForceTranslateAllToEnglish(progress);
+                    } else if (progress.operation === 'fill-french') {
+                        resumeFillAllFrenchFields(progress);
+                    }
+                } else {
+                    clearBulkProgress();
+                }
             }
         }
         
@@ -1653,6 +1709,291 @@
         
         // Show completion message
         alert(`🌍 FRENCH FIELD FILL COMPLETE!\n\n✅ Successfully filled French field: ${successCount} products\n❌ Failed: ${errorCount} products\n\n✅ English content remains UNTOUCHED\n✅ French localization field has been filled`);
+    }
+
+    // Resume functions
+    async function resumeForceTranslateAllToEnglish(savedProgress) {
+        console.log('📋 Resuming FORCE English translation from:', savedProgress);
+        
+        // Show progress container
+        const progressContainer = document.getElementById('progress-container');
+        progressContainer.style.display = 'block';
+        
+        // Disable buttons during translation
+        document.getElementById('force-translate-english-btn').disabled = true;
+        document.getElementById('fill-french-field-btn').disabled = true;
+        document.getElementById('force-translate-all-english-btn').disabled = true;
+        document.getElementById('fill-all-french-fields-btn').disabled = true;
+        document.getElementById('resume-bulk-btn').disabled = true;
+        
+        let successCount = savedProgress.successCount;
+        let errorCount = savedProgress.errorCount;
+        let processedCount = savedProgress.processedCount;
+        let currentPage = savedProgress.currentPage;
+        
+        console.log(`📋 RESUMING FORCE TRANSLATION: ${processedCount}/${savedProgress.totalProducts} products already processed`);
+        
+        // Continue from where we left off
+        let hasMorePages = true;
+        
+        while (hasMorePages && !window.shouldStopBulkTranslation) {
+            try {
+                // Fetch products for current page
+                const response = await fetch(`/api/products?shop=${shop}&limit=250&page=${currentPage}&showAll=true`);
+                const data = await response.json();
+                
+                if (!data.success) {
+                    throw new Error(data.error || 'Failed to fetch products');
+                }
+                
+                const products = data.products;
+                console.log(`📋 Resuming page ${currentPage}: ${products.length} products`);
+                
+                // Process each product on this page
+                for (let i = 0; i < products.length && !window.shouldStopBulkTranslation; i++) {
+                    const product = products[i];
+                    const metafield = product.metafields?.find(m => m.namespace === 'custom' && m.key === 'specification');
+                    const metafieldId = metafield ? metafield.id : '';
+                    
+                    if (!metafieldId) {
+                        console.log(`Skipping product ${product.title} - no metafield ID`);
+                        continue;
+                    }
+                    
+                    try {
+                        // Update progress
+                        processedCount++;
+                        const progress = Math.round((processedCount / savedProgress.totalProducts) * 100);
+                        document.getElementById('progress-fill').style.width = progress + '%';
+                        document.getElementById('progress-text').textContent = progress + '% Complete (Resumed)';
+                        document.getElementById('progress-details').textContent = `FORCE translating to English: ${product.title}`;
+                        
+                        // Save progress every 10 products
+                        if (processedCount % 10 === 0) {
+                            saveBulkProgress('force-english', processedCount, savedProgress.totalProducts, successCount, errorCount, currentPage);
+                        }
+                        
+                        // Get the original metafield content
+                        const metafieldResponse = await fetch(`/api/metafield/${metafieldId}?shop=${shop}`);
+                        const metafieldData = await metafieldResponse.json();
+                        
+                        if (!metafieldData.success) {
+                            throw new Error(metafieldData.error || 'Failed to get metafield');
+                        }
+                        
+                        const originalContent = metafieldData.metafield.value;
+                        let jsonContent;
+                        
+                        try {
+                            jsonContent = JSON.parse(originalContent);
+                        } catch (parseError) {
+                            console.log(`Skipping product ${product.title} - invalid JSON`);
+                            continue;
+                        }
+                        
+                        // Detect source language and translate to English
+                        const sourceLanguage = detectLanguage(jsonContent);
+                        
+                        // FORCE translate to English
+                        const translateResponse = await fetch(`/api/translate-to-english?shop=${shop}`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                                metafieldId: metafieldId,
+                                content: jsonContent,
+                                sourceLanguage: sourceLanguage
+                            })
+                        });
+                        
+                        const result = await translateResponse.json();
+                        
+                        if (result.success) {
+                            successCount++;
+                            console.log(`✅ FORCE translated to English: ${product.title}`);
+                        } else {
+                            errorCount++;
+                            console.error(`❌ Failed to FORCE translate ${product.title}:`, result.error);
+                        }
+                        
+                    } catch (error) {
+                        errorCount++;
+                        console.error(`❌ Error FORCE translating ${product.title}:`, error.message);
+                    }
+                    
+                    // Small delay to avoid overwhelming the server
+                    await new Promise(resolve => setTimeout(resolve, 200));
+                }
+                
+                // Check if there are more pages
+                hasMorePages = data.hasNextPage && data.nextPageInfo;
+                if (hasMorePages) {
+                    currentPage++;
+                    console.log(`Moving to page ${currentPage}...`);
+                }
+                
+            } catch (error) {
+                console.error(`Error processing page ${currentPage}:`, error.message);
+                errorCount++;
+                break;
+            }
+        }
+        
+        // Check if stopped by user
+        if (window.shouldStopBulkTranslation) {
+            document.getElementById('progress-text').textContent = 'Translation Stopped';
+            document.getElementById('progress-details').textContent = `Stopped at ${processedCount}/${savedProgress.totalProducts} products`;
+            saveBulkProgress('force-english', processedCount, savedProgress.totalProducts, successCount, errorCount, currentPage);
+            alert(`🛑 Translation stopped!\n\nProgress saved: ${processedCount}/${savedProgress.totalProducts} products\n✅ Success: ${successCount} | ❌ Errors: ${errorCount}\n\nYou can resume later using the "Resume Translation" button.`);
+        } else {
+            // Completed successfully
+            document.getElementById('progress-text').textContent = 'FORCE English Translation Complete!';
+            document.getElementById('progress-details').textContent = `✅ Success: ${successCount} | ❌ Failed: ${errorCount}`;
+            clearBulkProgress();
+            alert(`🚀 FORCE ENGLISH TRANSLATION COMPLETE!\n\n✅ Successfully translated: ${successCount} products\n❌ Failed: ${errorCount} products\n\n⚠️ Original metafields have been updated to English content.`);
+        }
+        
+        // Re-enable buttons
+        document.getElementById('force-translate-english-btn').disabled = false;
+        document.getElementById('fill-french-field-btn').disabled = false;
+        document.getElementById('force-translate-all-english-btn').disabled = false;
+        document.getElementById('fill-all-french-fields-btn').disabled = false;
+        document.getElementById('resume-bulk-btn').disabled = false;
+        
+        // Reset stop flag
+        window.shouldStopBulkTranslation = false;
+    }
+
+    async function resumeFillAllFrenchFields(savedProgress) {
+        console.log('📋 Resuming French field fill from:', savedProgress);
+        
+        // Show progress container
+        const progressContainer = document.getElementById('progress-container');
+        progressContainer.style.display = 'block';
+        
+        // Disable buttons during translation
+        document.getElementById('force-translate-english-btn').disabled = true;
+        document.getElementById('fill-french-field-btn').disabled = true;
+        document.getElementById('force-translate-all-english-btn').disabled = true;
+        document.getElementById('fill-all-french-fields-btn').disabled = true;
+        document.getElementById('resume-bulk-btn').disabled = true;
+        
+        let successCount = savedProgress.successCount;
+        let errorCount = savedProgress.errorCount;
+        let processedCount = savedProgress.processedCount;
+        let currentPage = savedProgress.currentPage;
+        
+        console.log(`📋 RESUMING FRENCH FIELD FILL: ${processedCount}/${savedProgress.totalProducts} products already processed`);
+        
+        // Continue from where we left off
+        let hasMorePages = true;
+        
+        while (hasMorePages && !window.shouldStopBulkTranslation) {
+            try {
+                // Fetch products for current page
+                const response = await fetch(`/api/products?shop=${shop}&limit=250&page=${currentPage}&showAll=true`);
+                const data = await response.json();
+                
+                if (!data.success) {
+                    throw new Error(data.error || 'Failed to fetch products');
+                }
+                
+                const products = data.products;
+                console.log(`📋 Resuming page ${currentPage}: ${products.length} products`);
+                
+                // Process each product on this page
+                for (let i = 0; i < products.length && !window.shouldStopBulkTranslation; i++) {
+                    const product = products[i];
+                    const metafield = product.metafields?.find(m => m.namespace === 'custom' && m.key === 'specification');
+                    const metafieldId = metafield ? metafield.id : '';
+                    
+                    if (!metafieldId) {
+                        console.log(`Skipping product ${product.title} - no metafield ID`);
+                        continue;
+                    }
+                    
+                    try {
+                        // Update progress
+                        processedCount++;
+                        const progress = Math.round((processedCount / savedProgress.totalProducts) * 100);
+                        document.getElementById('progress-fill').style.width = progress + '%';
+                        document.getElementById('progress-text').textContent = progress + '% Complete (Resumed)';
+                        document.getElementById('progress-details').textContent = `Filling French field: ${product.title}`;
+                        
+                        // Save progress every 10 products
+                        if (processedCount % 10 === 0) {
+                            saveBulkProgress('fill-french', processedCount, savedProgress.totalProducts, successCount, errorCount, currentPage);
+                        }
+                        
+                        // Use the existing endpoint that fills French field only
+                        const translateResponse = await fetch(`/api/metafield/${metafieldId}`, {
+                            method: 'PUT',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                                targetLanguage: 'fr',
+                                shop: shop
+                            })
+                        });
+                        
+                        const result = await translateResponse.json();
+                        
+                        if (result.success) {
+                            successCount++;
+                            console.log(`✅ French field filled: ${product.title}`);
+                        } else {
+                            errorCount++;
+                            console.error(`❌ Failed to fill French field for ${product.title}:`, result.error);
+                        }
+                        
+                    } catch (error) {
+                        errorCount++;
+                        console.error(`❌ Error filling French field for ${product.title}:`, error.message);
+                    }
+                    
+                    // Small delay to avoid overwhelming the server
+                    await new Promise(resolve => setTimeout(resolve, 200));
+                }
+                
+                // Check if there are more pages
+                hasMorePages = data.hasNextPage && data.nextPageInfo;
+                if (hasMorePages) {
+                    currentPage++;
+                    console.log(`Moving to page ${currentPage}...`);
+                }
+                
+            } catch (error) {
+                console.error(`Error processing page ${currentPage}:`, error.message);
+                errorCount++;
+                break;
+            }
+        }
+        
+        // Check if stopped by user
+        if (window.shouldStopBulkTranslation) {
+            document.getElementById('progress-text').textContent = 'Translation Stopped';
+            document.getElementById('progress-details').textContent = `Stopped at ${processedCount}/${savedProgress.totalProducts} products`;
+            saveBulkProgress('fill-french', processedCount, savedProgress.totalProducts, successCount, errorCount, currentPage);
+            alert(`🛑 Translation stopped!\n\nProgress saved: ${processedCount}/${savedProgress.totalProducts} products\n✅ Success: ${successCount} | ❌ Errors: ${errorCount}\n\nYou can resume later using the "Resume Translation" button.`);
+        } else {
+            // Completed successfully
+            document.getElementById('progress-text').textContent = 'French Field Fill Complete!';
+            document.getElementById('progress-details').textContent = `✅ Success: ${successCount} | ❌ Failed: ${errorCount}`;
+            clearBulkProgress();
+            alert(`🌍 FRENCH FIELD FILL COMPLETE!\n\n✅ Successfully filled French field: ${successCount} products\n❌ Failed: ${errorCount} products\n\n✅ English content remains UNTOUCHED\n✅ French localization field has been filled`);
+        }
+        
+        // Re-enable buttons
+        document.getElementById('force-translate-english-btn').disabled = false;
+        document.getElementById('fill-french-field-btn').disabled = false;
+        document.getElementById('force-translate-all-english-btn').disabled = false;
+        document.getElementById('fill-all-french-fields-btn').disabled = false;
+        document.getElementById('resume-bulk-btn').disabled = false;
+        
+        // Reset stop flag
+        window.shouldStopBulkTranslation = false;
     }
         
         async function bulkTranslateAll() {
