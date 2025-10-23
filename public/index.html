@@ -85,9 +85,9 @@
         }
         
         .products-list {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 15px;
         }
         
         .product-card {
@@ -97,9 +97,9 @@
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
             transition: box-shadow 0.2s;
             display: flex;
-            justify-content: space-between;
-            align-items: center;
+            flex-direction: column;
             border-left: 4px solid #96bf48;
+            min-height: 200px;
         }
         
         .product-card:hover {
@@ -108,7 +108,7 @@
         
         .product-info {
             flex: 1;
-            margin-right: 20px;
+            margin-bottom: 15px;
         }
         
         .product-title {
@@ -139,7 +139,7 @@
             display: flex;
             flex-direction: column;
             gap: 8px;
-            min-width: 180px;
+            margin-top: auto;
         }
         
         .pagination {

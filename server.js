@@ -268,36 +268,36 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
         metafields: [] // Empty metafields array for products without specs
       }));
     } else {
-      console.log('Checking metafields for each product...');
+    console.log('Checking metafields for each product...');
       // Check each product for custom.specification metafield with parallel processing
       const metafieldPromises = products.map(async (product) => {
-        try {
-          console.log(`Checking metafields for product ${product.id}: ${product.title}`);
-          const metafieldResponse = await axios.get(`https://${shop}/admin/api/2023-10/products/${product.id}/metafields.json`, {
-            headers: {
-              'X-Shopify-Access-Token': accessToken,
-              'Content-Type': 'application/json'
-            },
-            params: {
-              namespace: 'custom',
-              key: 'specification'
-            }
-          });
-
-          console.log(`Product ${product.id} metafields:`, metafieldResponse.data.metafields.length);
-          if (metafieldResponse.data.metafields && metafieldResponse.data.metafields.length > 0) {
-            return {
-              id: product.id,
-              title: product.title,
-              handle: product.handle,
-              metafields: metafieldResponse.data.metafields
-            };
-          } else {
-            console.log(`❌ Product ${product.id} has no custom.specification metafield`);
-            return null;
+      try {
+        console.log(`Checking metafields for product ${product.id}: ${product.title}`);
+        const metafieldResponse = await axios.get(`https://${shop}/admin/api/2023-10/products/${product.id}/metafields.json`, {
+          headers: {
+            'X-Shopify-Access-Token': accessToken,
+            'Content-Type': 'application/json'
+          },
+          params: {
+            namespace: 'custom',
+            key: 'specification'
           }
-        } catch (error) {
-          console.error(`Error fetching metafields for product ${product.id}:`, error.message);
+        });
+
+        console.log(`Product ${product.id} metafields:`, metafieldResponse.data.metafields.length);
+        if (metafieldResponse.data.metafields && metafieldResponse.data.metafields.length > 0) {
+            return {
+            id: product.id,
+            title: product.title,
+            handle: product.handle,
+            metafields: metafieldResponse.data.metafields
+            };
+        } else {
+          console.log(`❌ Product ${product.id} has no custom.specification metafield`);
+            return null;
+        }
+      } catch (error) {
+        console.error(`Error fetching metafields for product ${product.id}:`, error.message);
           return null;
         }
       });
@@ -361,13 +361,13 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
         retryAfter: error.response.headers['retry-after'] || 60
       });
     } else {
-      res.status(500).json({ 
-        error: 'Failed to fetch products',
-        details: error.message,
-        shop: req.shop,
-        status: error.response?.status,
-        response: error.response?.data
-      });
+    res.status(500).json({ 
+      error: 'Failed to fetch products',
+      details: error.message,
+      shop: req.shop,
+      status: error.response?.status,
+      response: error.response?.data
+    });
     }
   }
 });
@@ -760,49 +760,11 @@ app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
     console.error('Error status:', error.response?.status);
     console.error('Error details:', error.response?.data);
     
-    // Fallback: Try creating a French locale metafield directly
-    console.log('Attempting fallback method: Creating French locale metafield...');
-    
-    try {
-      const fallbackResponse = await axios.post(`https://${shop}/admin/api/2023-10/metafields.json`, {
-        metafield: {
-          namespace: "custom",
-          key: "specification",
-          value: JSON.stringify(translatedContent),
-          type: "json",
-          owner_id: productId,
-          owner_resource: "product",
-          locale: "fr"
-        }
-      }, {
-        headers: {
-          'X-Shopify-Access-Token': accessToken,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      console.log('Fallback method successful:', fallbackResponse.data);
-      
-      res.json({
-        success: true,
-        translation: fallbackResponse.data.metafield,
-        message: 'French translation created using fallback method!',
-        method: 'fallback'
-      });
-      
-    } catch (fallbackError) {
-      console.error('Fallback method also failed:', fallbackError.response?.data || fallbackError.message);
-      
-      res.status(500).json({ 
-        error: 'Failed to create French translation (both methods failed)',
-        details: {
-          graphql_error: error.response?.data || error.message,
-          fallback_error: fallbackError.response?.data || fallbackError.message,
-          graphql_status: error.response?.status,
-          fallback_status: fallbackError.response?.status
-        }
-      });
-    }
+    res.status(500).json({ 
+      error: 'Failed to create French translation',
+      details: error.response?.data || error.message,
+      status: error.response?.status
+    });
   }
 });
 
@@ -991,12 +953,12 @@ app.post('/api/bulk-translate-all', authenticateShopify, async (req, res) => {
             const response = await axios.post(`https://${shop}/admin/api/2024-01/graphql.json`, {
               query: graphqlQuery,
               variables: variables
-            }, {
-              headers: {
-                'X-Shopify-Access-Token': accessToken,
-                'Content-Type': 'application/json'
-              }
-            });
+      }, {
+        headers: {
+          'X-Shopify-Access-Token': accessToken,
+          'Content-Type': 'application/json'
+        }
+      });
 
             console.log('GraphQL response:', JSON.stringify(response.data, null, 2));
 
@@ -1059,16 +1021,16 @@ app.post('/api/bulk-translate-all', authenticateShopify, async (req, res) => {
     console.log(`Successful: ${results.success}`);
     console.log(`Errors: ${results.errors}`);
     console.log(`Skipped: ${results.skipped}`);
-
-    res.json({
-      success: true,
+      
+      res.json({
+        success: true,
       message: `Bulk translation completed! Processed ${results.processed} products. ${results.success} successful, ${results.errors} errors, ${results.skipped} skipped.`,
       results: results
-    });
-
+      });
+      
   } catch (error) {
     console.error('Bulk translate all error:', error);
-    res.status(500).json({
+      res.status(500).json({ 
       error: 'Bulk translation failed',
       details: error.message
     });
