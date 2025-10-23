@@ -597,10 +597,10 @@ app.get('/api/metafield/:id/french', async (req, res) => {
 
     console.log(`📊 GraphQL response:`, JSON.stringify(graphqlResponse.data, null, 2));
 
-    const metafield = graphqlResponse.data.data?.metafield;
-    if (metafield) {
-      console.log(`✅ Found metafield: ${metafield.namespace}.${metafield.key}`);
-      const translations = metafield.translations || [];
+    const metafieldData = graphqlResponse.data.data?.metafield;
+    if (metafieldData) {
+      console.log(`✅ Found metafield: ${metafieldData.namespace}.${metafieldData.key}`);
+      const translations = metafieldData.translations || [];
       console.log(`🌍 Found ${translations.length} translations:`, translations);
       
       const frenchTranslation = translations.find(t => t.locale === 'FR');
