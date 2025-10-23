@@ -565,25 +565,28 @@ app.get('/api/metafield/:id/french', async (req, res) => {
     console.log(`🏷️ Metafield namespace: ${metafield.namespace}, key: ${metafield.key}`);
 
     // Try GraphQL translations first (this is how Shopify stores translations)
+    // Use the specific metafield ID instead of namespace/key lookup
     const graphqlQuery = `
-      query GetTranslations($id: ID!) {
-        product(id: $id) {
-          metafield(namespace: "custom", key: "specification") {
-            translations(locales: [FR]) {
-              locale
-              value
-            }
+      query GetMetafieldTranslations($id: ID!) {
+        metafield(id: $id) {
+          id
+          namespace
+          key
+          value
+          translations(locales: [FR]) {
+            locale
+            value
           }
         }
       }
     `;
 
-    console.log(`🔍 Trying GraphQL translations for product ${productId}...`);
+    console.log(`🔍 Trying GraphQL translations for metafield ${id}...`);
     
     const graphqlResponse = await axios.post(`https://${shop}/admin/api/2023-10/graphql.json`, {
       query: graphqlQuery,
       variables: {
-        id: `gid://shopify/Product/${productId}`
+        id: `gid://shopify/Metafield/${id}`
       }
     }, {
       headers: {
@@ -594,18 +597,22 @@ app.get('/api/metafield/:id/french', async (req, res) => {
 
     console.log(`📊 GraphQL response:`, JSON.stringify(graphqlResponse.data, null, 2));
 
-    const translations = graphqlResponse.data.data?.product?.metafield?.translations || [];
-    console.log(`🌍 Found ${translations.length} translations:`, translations);
-    
-    const frenchTranslation = translations.find(t => t.locale === 'FR');
-    
-    if (frenchTranslation) {
-      console.log(`✅ Found French translation:`, frenchTranslation.value.substring(0, 100) + '...');
-      res.json({
-        success: true,
-        frenchContent: frenchTranslation.value
-      });
-      return;
+    const metafield = graphqlResponse.data.data?.metafield;
+    if (metafield) {
+      console.log(`✅ Found metafield: ${metafield.namespace}.${metafield.key}`);
+      const translations = metafield.translations || [];
+      console.log(`🌍 Found ${translations.length} translations:`, translations);
+      
+      const frenchTranslation = translations.find(t => t.locale === 'FR');
+      
+      if (frenchTranslation) {
+        console.log(`✅ Found French translation:`, frenchTranslation.value.substring(0, 100) + '...');
+        res.json({
+          success: true,
+          frenchContent: frenchTranslation.value
+        });
+        return;
+      }
     }
 
     // Try to get all metafields for this product to see what's available
@@ -648,6 +655,68 @@ app.get('/api/metafield/:id/french', async (req, res) => {
         frenchContent: frenchMetafield.value
       });
       return;
+    }
+
+    // Try a different GraphQL approach - get all metafields with translations
+    console.log(`🔍 Trying alternative GraphQL approach...`);
+    
+    const alternativeGraphqlQuery = `
+      query GetProductMetafields($id: ID!) {
+        product(id: $id) {
+          metafields(first: 10) {
+            edges {
+              node {
+                id
+                namespace
+                key
+                value
+                translations(locales: [FR]) {
+                  locale
+                  value
+                }
+              }
+            }
+          }
+        }
+      }
+    `;
+
+    const alternativeResponse = await axios.post(`https://${shop}/admin/api/2023-10/graphql.json`, {
+      query: alternativeGraphqlQuery,
+      variables: {
+        id: `gid://shopify/Product/${productId}`
+      }
+    }, {
+      headers: {
+        'X-Shopify-Access-Token': accessToken,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    console.log(`📊 Alternative GraphQL response:`, JSON.stringify(alternativeResponse.data, null, 2));
+
+    const metafieldEdges = alternativeResponse.data.data?.product?.metafields?.edges || [];
+    console.log(`🔍 Found ${metafieldEdges.length} metafields via GraphQL`);
+
+    // Look for the specification metafield with French translation
+    for (const edge of metafieldEdges) {
+      const metafield = edge.node;
+      console.log(`🔍 Checking metafield: ${metafield.namespace}.${metafield.key}`);
+      
+      if (metafield.namespace === 'custom' && metafield.key === 'specification') {
+        console.log(`✅ Found specification metafield via GraphQL`);
+        console.log(`🌍 Translations:`, metafield.translations);
+        
+        const frenchTranslation = metafield.translations.find(t => t.locale === 'FR');
+        if (frenchTranslation) {
+          console.log(`✅ Found French translation via alternative GraphQL:`, frenchTranslation.value.substring(0, 100) + '...');
+          res.json({
+            success: true,
+            frenchContent: frenchTranslation.value
+          });
+          return;
+        }
+      }
     }
 
     console.log(`❌ No French translation found for metafield ${id}`);
