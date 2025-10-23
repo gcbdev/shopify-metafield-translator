@@ -75,14 +75,18 @@ const authenticateShopify = async (req, res, next) => {
 app.get('/api/products', authenticateShopify, async (req, res) => {
   try {
     const shop = req.shop;
-    const limit = parseInt(req.query.limit) || 10; // Default to 10 products
-    const maxLimit = 250; // Maximum limit for performance
+    const limit = parseInt(req.query.limit) || 500; // Default to 500 products
+    const page = parseInt(req.query.page) || 1; // Default to page 1
+    const maxLimit = 500; // Maximum limit for performance
     const safeLimit = Math.min(Math.max(limit, 1), maxLimit);
+    const offset = (page - 1) * safeLimit;
     const accessToken = req.accessToken;
 
     console.log('=== PRODUCTS API CALL START ===');
     console.log('Shop:', shop);
     console.log('Limit:', safeLimit);
+    console.log('Page:', page);
+    console.log('Offset:', offset);
     console.log('Access Token:', accessToken.substring(0, 10) + '...');
     console.log('API URL:', `https://${shop}/admin/api/2023-10/products.json`);
 
@@ -95,7 +99,8 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
       },
       params: {
         limit: safeLimit,
-        fields: 'id,title,handle'
+        fields: 'id,title,handle',
+        page_info: req.query.page_info // Support Shopify's pagination
       }
     });
 
@@ -148,7 +153,10 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
       products: productsWithSpecs,
       total: productsWithSpecs.length,
       limit: safeLimit,
-      message: `Found ${productsWithSpecs.length} products with custom.specification metafields from ${shop}. Use ?limit=X to control how many products to display.`
+      page: page,
+      hasNextPage: response.data.products.length === safeLimit,
+      nextPageInfo: response.headers['link'] ? response.headers['link'].match(/<([^>]+)>; rel="next"/)?.[1] : null,
+      message: `Found ${productsWithSpecs.length} products with custom.specification metafields from ${shop}. Showing page ${page} with ${safeLimit} products per page.`
     });
   } catch (error) {
     console.error('=== ERROR FETCHING PRODUCTS ===');

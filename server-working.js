@@ -88,7 +88,11 @@ app.get('/api/products', (req, res) => {
   res.json({
     success: true,
     products: mockProducts,
-    total: mockProducts.length
+    total: mockProducts.length,
+    limit: 500,
+    page: 1,
+    hasNextPage: false,
+    message: `Found ${mockProducts.length} products with custom.specification metafields. Showing page 1 with 500 products per page.`
   });
 });
 

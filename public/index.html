@@ -84,10 +84,10 @@
             background-color: #4b5563;
         }
         
-        .products-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            gap: 20px;
+        .products-list {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
         }
         
         .product-card {
@@ -96,23 +96,31 @@
             padding: 20px;
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
             transition: box-shadow 0.2s;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
         
         .product-card:hover {
             box-shadow: 0 4px 12px rgba(0,0,0,0.15);
         }
         
+        .product-info {
+            flex: 1;
+            margin-right: 20px;
+        }
+        
         .product-title {
-            font-size: 16px;
+            font-size: 18px;
             font-weight: 600;
-            margin-bottom: 10px;
+            margin-bottom: 5px;
             color: #1f2937;
         }
         
         .product-handle {
             color: #6b7280;
             font-size: 14px;
-            margin-bottom: 15px;
+            margin-bottom: 10px;
         }
         
         .metafield-preview {
@@ -121,9 +129,46 @@
             border-radius: 4px;
             font-family: monospace;
             font-size: 12px;
-            max-height: 100px;
+            max-height: 80px;
             overflow-y: auto;
-            margin-bottom: 15px;
+            margin-bottom: 10px;
+        }
+        
+        .product-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            min-width: 200px;
+        }
+        
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 20px 0;
+            gap: 10px;
+        }
+        
+        .pagination button {
+            padding: 8px 12px;
+            border: 1px solid #d1d5db;
+            background: white;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        .pagination button:hover {
+            background: #f9fafb;
+        }
+        
+        .pagination button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .pagination-info {
+            color: #6b7280;
+            font-size: 14px;
         }
         
         .loading {
@@ -209,12 +254,18 @@
                 <label>Target Language: French</label>
                 <input type="hidden" id="target-language" value="fr">
             </div>
-            <button class="btn" onclick="loadProducts()">Load Products</button>
+            <button class="btn" onclick="loadProducts()">Load Products (500 per batch)</button>
             <button class="btn btn-secondary" onclick="translateAll()">Translate All to French</button>
         </div>
         
         <div id="products-container">
             <div class="loading">Loading products...</div>
+        </div>
+        
+        <div id="pagination-container" class="pagination" style="display: none;">
+            <button id="prev-btn" onclick="loadPreviousPage()" disabled>Previous</button>
+            <span id="pagination-info" class="pagination-info"></span>
+            <button id="next-btn" onclick="loadNextPage()" disabled>Next</button>
         </div>
     </div>
     
@@ -242,6 +293,9 @@
         let products = [];
         let currentProduct = null;
         let currentMetafieldId = null;
+        let currentPage = 1;
+        let totalProducts = 0;
+        let productsPerPage = 500;
         
         // Get URL parameters
         const urlParams = new URLSearchParams(window.location.search);
@@ -270,13 +324,14 @@
                     return;
                 }
                 
-                const response = await fetch(`/api/products?shop=${shop}`);
+                const response = await fetch(`/api/products?shop=${shop}&limit=${productsPerPage}&page=${currentPage}`);
                 const data = await response.json();
                 
                 console.log('Products API response:', data);
                 
                 if (data.success) {
                     products = data.products;
+                    totalProducts = data.total || data.products.length;
                     displayProducts();
                 } else {
                     showError('Failed to load products: ' + (data.error || 'Unknown error'));
@@ -296,18 +351,27 @@
             }
             
             container.innerHTML = `
-                <div class="products-grid">
+                <div class="products-list">
                     ${products.map(product => `
                         <div class="product-card">
-                            <div class="product-title">${product.title}</div>
-                            <div class="product-handle">${product.handle}</div>
-                            <div class="metafield-preview">${getMetafieldPreview(product)}</div>
-                            <button class="btn" onclick="testTranslateProduct(${product.id})">Test French Translation</button>
-                            <button class="btn btn-secondary" onclick="translateProduct(${product.id})">Translate to French</button>
+                            <div class="product-info">
+                                <div class="product-title">${product.title}</div>
+                                <div class="product-handle">${product.handle}</div>
+                                <div class="metafield-preview">${getMetafieldPreview(product)}</div>
+                            </div>
+                            <div class="product-actions">
+                                <button class="btn" onclick="testTranslateProduct(${product.id})">Test French Translation</button>
+                                <button class="btn btn-secondary" onclick="translateProduct(${product.id})">Translate to French</button>
+                            </div>
                         </div>
                     `).join('')}
                 </div>
             `;
+            
+            // Show pagination if we have products
+            if (products.length > 0) {
+                updatePagination();
+            }
         }
         
         
@@ -523,6 +587,43 @@
         
         function showLoading() {
             document.getElementById('products-container').innerHTML = '<div class="loading">Loading...</div>';
+            document.getElementById('pagination-container').style.display = 'none';
+        }
+        
+        function updatePagination() {
+            const paginationContainer = document.getElementById('pagination-container');
+            const paginationInfo = document.getElementById('pagination-info');
+            const prevBtn = document.getElementById('prev-btn');
+            const nextBtn = document.getElementById('next-btn');
+            
+            if (totalProducts > productsPerPage) {
+                paginationContainer.style.display = 'flex';
+                
+                const startItem = (currentPage - 1) * productsPerPage + 1;
+                const endItem = Math.min(currentPage * productsPerPage, totalProducts);
+                
+                paginationInfo.textContent = `Showing ${startItem}-${endItem} of ${totalProducts} products`;
+                
+                prevBtn.disabled = currentPage <= 1;
+                nextBtn.disabled = endItem >= totalProducts;
+            } else {
+                paginationContainer.style.display = 'none';
+            }
+        }
+        
+        async function loadPreviousPage() {
+            if (currentPage > 1) {
+                currentPage--;
+                await loadProducts();
+            }
+        }
+        
+        async function loadNextPage() {
+            const maxPage = Math.ceil(totalProducts / productsPerPage);
+            if (currentPage < maxPage) {
+                currentPage++;
+                await loadProducts();
+            }
         }
         
         function showError(message) {
