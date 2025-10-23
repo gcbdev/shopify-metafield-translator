@@ -831,6 +831,9 @@ app.post('/api/bulk-translate-all', authenticateShopify, async (req, res) => {
     console.log('Target Language:', targetLanguage);
     console.log('Source Language:', sourceLanguage);
 
+    // Set a longer timeout for this operation
+    res.setTimeout(300000); // 5 minutes timeout
+
     let allProducts = [];
     let nextPageInfo = null;
 
@@ -1017,6 +1020,129 @@ app.post('/api/bulk-translate-all', authenticateShopify, async (req, res) => {
     console.error('Bulk translate all error:', error);
     res.status(500).json({
       error: 'Bulk translation failed',
+      details: error.message
+    });
+  }
+});
+
+// Test bulk translate with limited products (for testing)
+app.post('/api/bulk-translate-test', authenticateShopify, async (req, res) => {
+  try {
+    const shop = req.shop;
+    const accessToken = req.accessToken;
+    const targetLanguage = req.body.targetLanguage || 'fr';
+    const sourceLanguage = req.body.sourceLanguage || 'en';
+    const maxProducts = req.body.maxProducts || 10; // Test with only 10 products
+
+    console.log('=== BULK TRANSLATE TEST START ===');
+    console.log('Shop:', shop);
+    console.log('Max Products:', maxProducts);
+
+    // Get first page only for testing
+    const response = await axios.get(`https://${shop}/admin/api/2023-10/products.json`, {
+      headers: {
+        'X-Shopify-Access-Token': accessToken,
+        'Content-Type': 'application/json'
+      },
+      params: {
+        limit: Math.min(maxProducts, 250),
+        fields: 'id,title,handle'
+      }
+    });
+
+    const products = response.data.products;
+    console.log(`Testing with ${products.length} products`);
+
+    const results = {
+      totalProducts: products.length,
+      processed: 0,
+      errors: 0,
+      success: 0,
+      skipped: 0,
+      details: []
+    };
+
+    // Process products one by one for testing
+    for (const product of products) {
+      try {
+        console.log(`Processing product ${product.id}: ${product.title}`);
+        
+        // Check if product has metafield
+        const metafieldResponse = await axios.get(`https://${shop}/admin/api/2023-10/products/${product.id}/metafields.json`, {
+          headers: {
+            'X-Shopify-Access-Token': accessToken,
+            'Content-Type': 'application/json'
+          },
+          params: {
+            namespace: 'custom',
+            key: 'specification'
+          }
+        });
+
+        if (metafieldResponse.data.metafields.length === 0) {
+          results.details.push({ productId: product.id, status: 'skipped', reason: 'No metafield found', title: product.title });
+          results.skipped++;
+          continue;
+        }
+
+        const metafield = metafieldResponse.data.metafields[0];
+        let jsonContent;
+
+        try {
+          jsonContent = JSON.parse(metafield.value);
+        } catch (parseError) {
+          results.details.push({ productId: product.id, status: 'error', reason: 'Invalid JSON in metafield', title: product.title });
+          results.errors++;
+          continue;
+        }
+
+        // Translate the JSON content
+        const translatedContent = await translateJsonContent(jsonContent, sourceLanguage, targetLanguage);
+
+        // Update the metafield
+        await axios.put(`https://${shop}/admin/api/2023-10/metafields/${metafield.id}.json`, {
+          metafield: {
+            id: metafield.id,
+            value: JSON.stringify(translatedContent)
+          }
+        }, {
+          headers: {
+            'X-Shopify-Access-Token': accessToken,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        results.details.push({ productId: product.id, status: 'success', title: product.title });
+        results.success++;
+
+      } catch (error) {
+        console.error(`Error translating product ${product.id}:`, error.message);
+        results.details.push({ productId: product.id, status: 'error', reason: error.message, title: product.title });
+        results.errors++;
+      }
+
+      results.processed++;
+      
+      // Small delay between products
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
+    console.log('=== BULK TRANSLATE TEST COMPLETE ===');
+    console.log(`Total processed: ${results.processed}`);
+    console.log(`Successful: ${results.success}`);
+    console.log(`Errors: ${results.errors}`);
+    console.log(`Skipped: ${results.skipped}`);
+
+    res.json({
+      success: true,
+      message: `Test bulk translation completed! Processed ${results.processed} products. ${results.success} successful, ${results.errors} errors, ${results.skipped} skipped.`,
+      results: results
+    });
+
+  } catch (error) {
+    console.error('Bulk translate test error:', error);
+    res.status(500).json({
+      error: 'Bulk translation test failed',
       details: error.message
     });
   }
