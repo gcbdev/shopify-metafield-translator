@@ -611,16 +611,8 @@ app.post('/api/translate-to-english', async (req, res) => {
     console.log('Source language:', sourceLanguage);
     console.log('Original content:', JSON.stringify(content, null, 2));
 
-    // Check if content is already in English
-    if (sourceLanguage === 'en') {
-      console.log('Content is already in English, no translation needed');
-      res.json({
-        success: true,
-        translatedContent: content,
-        message: 'Content was already in English, no translation needed'
-      });
-      return;
-    }
+    // FORCE translate to English - always translate regardless of detected language
+    console.log('FORCE translating to English (no language check)...');
 
     // Translate the content to English
     const englishContent = await translateJsonContent(content, sourceLanguage, 'en');
