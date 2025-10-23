@@ -175,9 +175,9 @@ app.get('/api/products/count', authenticateShopify, async (req, res) => {
           console.log('No more pages found');
         }
 
-        // Safety check
-        if (pageCount > 100) {
-          console.log('Safety limit reached (100 pages), stopping scan');
+        // Safety check - increased limit for stores with many products
+        if (pageCount > 500) {
+          console.log('Safety limit reached (500 pages), stopping scan');
           break;
         }
 
@@ -189,12 +189,16 @@ app.get('/api/products/count', authenticateShopify, async (req, res) => {
 
     console.log('=== PRODUCT COUNT SCAN COMPLETE ===');
     console.log(`Total products found: ${totalCount} across ${pageCount} pages`);
+    console.log(`Average products per page: ${Math.round(totalCount / pageCount)}`);
+    console.log(`Expected pages for 4300+ products: ${Math.ceil(4300 / 250)}`);
 
     res.json({
       success: true,
       totalProducts: totalCount,
       message: `Found ${totalCount} total products in your store (scanned ${pageCount} pages)`,
-      isEstimate: false
+      isEstimate: false,
+      pagesScanned: pageCount,
+      averagePerPage: Math.round(totalCount / pageCount)
     });
 
   } catch (error) {
@@ -850,9 +854,9 @@ app.post('/api/bulk-translate-all', authenticateShopify, async (req, res) => {
           nextPageInfo = null;
         }
 
-        // Safety check
-        if (allProducts.length > 10000) {
-          console.log('Safety limit reached (10,000 products), stopping fetch');
+        // Safety check - increased limit for stores with many products
+        if (allProducts.length > 50000) {
+          console.log('Safety limit reached (50,000 products), stopping fetch');
           break;
         }
 
