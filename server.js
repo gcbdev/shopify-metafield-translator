@@ -152,6 +152,7 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
     productsWithSpecs = metafieldResults.filter(result => result !== null);
 
     console.log('=== FINAL RESULTS ===');
+    console.log('Total products received from Shopify:', products.length);
     console.log('Total products with specs:', productsWithSpecs.length);
     console.log('Products with specs:', productsWithSpecs.map(p => `${p.id}: ${p.title}`));
 
