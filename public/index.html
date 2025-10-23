@@ -395,6 +395,8 @@
         let totalPages = 0;
         let showAllProducts = false; // Toggle for showing all products vs only those with metafields
         let isScanning = false; // Flag to track if we're scanning products
+        let nextPageInfo = null; // Shopify pagination cursor
+        let previousPageInfo = null; // For going back
         
         // Get URL parameters
         const urlParams = new URLSearchParams(window.location.search);
@@ -429,7 +431,7 @@
                 
                 showLoading();
                 
-                const response = await fetch(`/api/products?shop=${shop}&limit=${productsPerPage}&page=${currentPage}&showAll=${showAllProducts}`);
+                const response = await fetch(`/api/products?shop=${shop}&limit=${productsPerPage}&showAll=${showAllProducts}&page_info=${nextPageInfo || ''}`);
                 const data = await response.json();
                 
                 console.log('Products API response:', data);
@@ -438,6 +440,9 @@
                     products = data.products;
                     // Store API response for pagination limit checking
                     window.lastApiResponse = data;
+                    
+                    // Store pagination info
+                    nextPageInfo = data.nextPageInfo;
                     
                     // Use the scanned total count, not the API response count
                     totalPages = Math.ceil(totalProducts / productsPerPage);
@@ -794,7 +799,7 @@
                 
                 // Update pagination buttons
                 prevBtn.disabled = currentPage <= 1;
-                nextBtn.disabled = currentPage >= totalPages;
+                nextBtn.disabled = !nextPageInfo;
             } else {
                 productCountDisplay.style.display = 'none';
                 pageInfo.textContent = 'Page 1 of 1';
@@ -804,14 +809,19 @@
         }
         
         async function loadPreviousPage() {
+            // For Shopify pagination, we need to implement a different approach
+            // Since we can't go back with cursors, we'll reload from the beginning
+            // and navigate forward to the previous page
             if (currentPage > 1) {
                 currentPage--;
+                // Reset pagination and reload
+                nextPageInfo = null;
                 await loadProducts();
             }
         }
         
         async function loadNextPage() {
-            if (currentPage < totalPages) {
+            if (nextPageInfo) {
                 currentPage++;
                 await loadProducts();
             }

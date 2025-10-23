@@ -81,52 +81,81 @@ app.get('/api/products/count', authenticateShopify, async (req, res) => {
     console.log('Shop:', shop);
 
     let totalCount = 0;
-    let pageInfo = null;
-    let hasMore = true;
+    let nextPageInfo = null;
     let pageCount = 0;
 
-    // Scan through ALL pages to get accurate count
-    while (hasMore) {
-      pageCount++;
-      console.log(`Scanning page ${pageCount}...`);
-      
-      const params = {
+    // Get first page
+    const firstResponse = await axios.get(`https://${shop}/admin/api/2023-10/products.json`, {
+      headers: {
+        'X-Shopify-Access-Token': accessToken,
+        'Content-Type': 'application/json'
+      },
+      params: {
         limit: 250,
         fields: 'id,title,handle'
-      };
+      }
+    });
+
+    const firstPageProducts = firstResponse.data.products;
+    totalCount += firstPageProducts.length;
+    pageCount++;
+
+    console.log(`Page ${pageCount}: ${firstPageProducts.length} products, total so far: ${totalCount}`);
+
+    // Check for pagination info in Link header
+    const linkHeader = firstResponse.headers['link'];
+    console.log('Link header:', linkHeader);
+    
+    if (linkHeader && linkHeader.includes('rel="next"')) {
+      const nextMatch = linkHeader.match(/<([^>]+)>; rel="next"/);
+      nextPageInfo = nextMatch ? nextMatch[1] : null;
+      console.log('Next page info found:', nextPageInfo);
+    }
+
+    // Continue scanning if there are more pages
+    while (nextPageInfo) {
+      pageCount++;
+      console.log(`Scanning page ${pageCount} with page_info: ${nextPageInfo}`);
       
-      if (pageInfo) {
-        params.page_info = pageInfo;
-      }
+      try {
+        const response = await axios.get(`https://${shop}/admin/api/2023-10/products.json`, {
+          headers: {
+            'X-Shopify-Access-Token': accessToken,
+            'Content-Type': 'application/json'
+          },
+          params: {
+            limit: 250,
+            fields: 'id,title,handle',
+            page_info: nextPageInfo
+          }
+        });
 
-      const response = await axios.get(`https://${shop}/admin/api/2023-10/products.json`, {
-        headers: {
-          'X-Shopify-Access-Token': accessToken,
-          'Content-Type': 'application/json'
-        },
-        params: params
-      });
+        const products = response.data.products;
+        totalCount += products.length;
 
-      const products = response.data.products;
-      totalCount += products.length;
+        console.log(`Page ${pageCount}: ${products.length} products, total so far: ${totalCount}`);
 
-      console.log(`Page ${pageCount}: ${products.length} products, total so far: ${totalCount}`);
+        // Check for next page
+        const newLinkHeader = response.headers['link'];
+        console.log('New link header:', newLinkHeader);
+        
+        if (newLinkHeader && newLinkHeader.includes('rel="next"')) {
+          const nextMatch = newLinkHeader.match(/<([^>]+)>; rel="next"/);
+          nextPageInfo = nextMatch ? nextMatch[1] : null;
+          console.log('Found next page info:', nextPageInfo);
+        } else {
+          nextPageInfo = null;
+          console.log('No more pages found');
+        }
 
-      // Check for next page
-      const linkHeader = response.headers['link'];
-      if (linkHeader && linkHeader.includes('rel="next"')) {
-        const nextMatch = linkHeader.match(/<([^>]+)>; rel="next"/);
-        pageInfo = nextMatch ? nextMatch[1] : null;
-        hasMore = !!pageInfo;
-        console.log('Found next page, continuing...');
-      } else {
-        hasMore = false;
-        console.log('No more pages found');
-      }
+        // Safety check
+        if (pageCount > 100) {
+          console.log('Safety limit reached (100 pages), stopping scan');
+          break;
+        }
 
-      // Safety check to prevent infinite loops
-      if (pageCount > 1000) {
-        console.log('Safety limit reached (1000 pages), stopping scan');
+      } catch (pageError) {
+        console.error(`Error scanning page ${pageCount}:`, pageError.message);
         break;
       }
     }
