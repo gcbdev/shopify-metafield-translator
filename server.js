@@ -108,8 +108,13 @@ app.get('/api/products/count', authenticateShopify, async (req, res) => {
     
     if (linkHeader && linkHeader.includes('rel="next"')) {
       const nextMatch = linkHeader.match(/<([^>]+)>; rel="next"/);
-      nextPageInfo = nextMatch ? nextMatch[1] : null;
-      console.log('Next page info found:', nextPageInfo);
+      if (nextMatch) {
+        const nextUrl = nextMatch[1];
+        // Extract page_info from the URL
+        const urlParams = new URLSearchParams(nextUrl.split('?')[1]);
+        nextPageInfo = urlParams.get('page_info');
+        console.log('Next page info found:', nextPageInfo);
+      }
     }
 
     // Continue scanning if there are more pages
@@ -130,6 +135,20 @@ app.get('/api/products/count', authenticateShopify, async (req, res) => {
           }
         });
 
+        // Check for rate limit headers
+        const rateLimitRemaining = response.headers['x-shopify-shop-api-call-limit'];
+        if (rateLimitRemaining) {
+          const [used, total] = rateLimitRemaining.split('/').map(Number);
+          const remaining = total - used;
+          console.log(`Rate limit: ${used}/${total} used, ${remaining} remaining`);
+          
+          // If we're getting close to the limit, wait a bit
+          if (remaining < 50) {
+            console.log('Rate limit getting low, waiting 1 second...');
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+        }
+
         const products = response.data.products;
         totalCount += products.length;
 
@@ -141,8 +160,16 @@ app.get('/api/products/count', authenticateShopify, async (req, res) => {
         
         if (newLinkHeader && newLinkHeader.includes('rel="next"')) {
           const nextMatch = newLinkHeader.match(/<([^>]+)>; rel="next"/);
-          nextPageInfo = nextMatch ? nextMatch[1] : null;
-          console.log('Found next page info:', nextPageInfo);
+          if (nextMatch) {
+            const nextUrl = nextMatch[1];
+            // Extract page_info from the URL
+            const urlParams = new URLSearchParams(nextUrl.split('?')[1]);
+            nextPageInfo = urlParams.get('page_info');
+            console.log('Found next page info:', nextPageInfo);
+          } else {
+            nextPageInfo = null;
+            console.log('No more pages found');
+          }
         } else {
           nextPageInfo = null;
           console.log('No more pages found');
@@ -219,6 +246,14 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
     console.log('Shopify API Response Status:', response.status);
     console.log('Number of products received:', response.data.products.length);
     console.log('First product:', response.data.products[0] ? response.data.products[0].title : 'No products');
+    
+    // Check for rate limit headers
+    const rateLimitRemaining = response.headers['x-shopify-shop-api-call-limit'];
+    if (rateLimitRemaining) {
+      const [used, total] = rateLimitRemaining.split('/').map(Number);
+      const remaining = total - used;
+      console.log(`Rate limit: ${used}/${total} used, ${remaining} remaining`);
+    }
 
     const products = response.data.products;
     let productsWithSpecs = [];
@@ -296,7 +331,18 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
       limit: safeLimit,
       page: page,
       hasNextPage: hasMoreProducts,
-      nextPageInfo: response.headers['link'] ? response.headers['link'].match(/<([^>]+)>; rel="next"/)?.[1] : null,
+      nextPageInfo: (() => {
+        const linkHeader = response.headers['link'];
+        if (linkHeader && linkHeader.includes('rel="next"')) {
+          const nextMatch = linkHeader.match(/<([^>]+)>; rel="next"/);
+          if (nextMatch) {
+            const nextUrl = nextMatch[1];
+            const urlParams = new URLSearchParams(nextUrl.split('?')[1]);
+            return urlParams.get('page_info');
+          }
+        }
+        return null;
+      })(),
       message: `Found ${productsWithSpecs.length} products with custom.specification metafields from ${shop}. Showing page ${page} with ${safeLimit} products per page. ${hasMoreProducts ? 'Note: Shopify limits pagination to 25,000 products.' : ''}`
     });
   } catch (error) {
