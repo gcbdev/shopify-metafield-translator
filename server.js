@@ -71,6 +71,80 @@ const authenticateShopify = async (req, res, next) => {
   }
 };
 
+// Get total product count from your Shopify store
+app.get('/api/products/count', authenticateShopify, async (req, res) => {
+  try {
+    const shop = req.shop;
+    const accessToken = req.accessToken;
+    const showAllProducts = req.query.showAll === 'true';
+
+    console.log('=== PRODUCT COUNT SCAN START ===');
+    console.log('Shop:', shop);
+    console.log('Show all products:', showAllProducts);
+
+    let totalCount = 0;
+    let pageInfo = null;
+    let hasMore = true;
+
+    // Scan through all pages to get accurate count
+    while (hasMore) {
+      const params = {
+        limit: 250,
+        fields: 'id,title,handle'
+      };
+      
+      if (pageInfo) {
+        params.page_info = pageInfo;
+      }
+
+      const response = await axios.get(`https://${shop}/admin/api/2023-10/products.json`, {
+        headers: {
+          'X-Shopify-Access-Token': accessToken,
+          'Content-Type': 'application/json'
+        },
+        params: params
+      });
+
+      const products = response.data.products;
+      totalCount += products.length;
+
+      console.log(`Scanned ${products.length} products, total so far: ${totalCount}`);
+
+      // Check for next page
+      const linkHeader = response.headers['link'];
+      if (linkHeader && linkHeader.includes('rel="next"')) {
+        const nextMatch = linkHeader.match(/<([^>]+)>; rel="next"/);
+        pageInfo = nextMatch ? nextMatch[1] : null;
+        hasMore = !!pageInfo;
+      } else {
+        hasMore = false;
+      }
+
+      // Safety check to prevent infinite loops
+      if (totalCount > 100000) {
+        console.log('Safety limit reached, stopping scan');
+        break;
+      }
+    }
+
+    console.log('=== PRODUCT COUNT SCAN COMPLETE ===');
+    console.log('Total products found:', totalCount);
+
+    res.json({
+      success: true,
+      totalProducts: totalCount,
+      message: `Found ${totalCount} total products in your store`
+    });
+
+  } catch (error) {
+    console.error('Product count scan error:', error);
+    res.status(500).json({ 
+      error: 'Failed to scan products',
+      details: error.message
+    });
+  }
+});
+
 // Get real products from your Shopify store
 app.get('/api/products', authenticateShopify, async (req, res) => {
   try {
@@ -182,8 +256,6 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
       products: productsWithSpecs,
       total: productsWithSpecs.length,
       totalShopifyProducts: products.length,
-      estimatedTotalProducts: estimatedTotal,
-      hasMoreProducts: hasMoreProducts,
       limit: safeLimit,
       page: page,
       hasNextPage: hasMoreProducts,

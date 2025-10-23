@@ -384,6 +384,7 @@
         let productsPerPage = 250;
         let totalPages = 0;
         let showAllProducts = false; // Toggle for showing all products vs only those with metafields
+        let isScanning = false; // Flag to track if we're scanning products
         
         // Get URL parameters
         const urlParams = new URLSearchParams(window.location.search);
@@ -405,12 +406,18 @@
         async function loadProducts() {
             try {
                 console.log('Loading products for shop:', shop, 'Page:', currentPage);
-                showLoading();
                 
                 if (!shop) {
                     showError('Shop parameter is required');
                     return;
                 }
+                
+                // First, scan for total product count if we haven't done it yet
+                if (totalProducts === 0 && !isScanning) {
+                    await scanProductCount();
+                }
+                
+                showLoading();
                 
                 const response = await fetch(`/api/products?shop=${shop}&limit=${productsPerPage}&page=${currentPage}&showAll=${showAllProducts}`);
                 const data = await response.json();
@@ -422,8 +429,7 @@
                     // Store API response for pagination limit checking
                     window.lastApiResponse = data;
                     
-                    // Use totalShopifyProducts if available, otherwise fall back to current batch count
-                    totalProducts = data.totalShopifyProducts || data.total || data.products.length;
+                    // Use the scanned total count, not the API response count
                     totalPages = Math.ceil(totalProducts / productsPerPage);
                     displayProducts();
                     updateBatchSelector();
@@ -435,6 +441,65 @@
                 console.error('Error loading products:', error);
                 showError('Error loading products: ' + error.message);
             }
+        }
+        
+        async function scanProductCount() {
+            try {
+                isScanning = true;
+                showScanningProgress();
+                
+                console.log('Scanning total product count...');
+                const response = await fetch(`/api/products/count?shop=${shop}&showAll=${showAllProducts}`);
+                const data = await response.json();
+                
+                console.log('Product count scan response:', data);
+                
+                if (data.success) {
+                    totalProducts = data.totalProducts;
+                    totalPages = Math.ceil(totalProducts / productsPerPage);
+                    console.log(`Total products found: ${totalProducts}`);
+                    showSuccess(`Found ${totalProducts} total products in your store!`);
+                } else {
+                    showError('Failed to scan products: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Error scanning products:', error);
+                showError('Error scanning products: ' + error.message);
+            } finally {
+                isScanning = false;
+                hideScanningProgress();
+            }
+        }
+        
+        function showScanningProgress() {
+            document.getElementById('products-container').innerHTML = `
+                <div class="loading">
+                    <h3>Scanning your store...</h3>
+                    <p>Counting all products to get accurate totals</p>
+                    <div style="margin-top: 20px;">
+                        <div style="width: 100%; height: 4px; background: #e5e7eb; border-radius: 2px; overflow: hidden;">
+                            <div style="width: 100%; height: 100%; background: linear-gradient(90deg, #96bf48, #7ba83a); animation: scanning 2s ease-in-out infinite;"></div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Add CSS animation
+            if (!document.getElementById('scanning-animation')) {
+                const style = document.createElement('style');
+                style.id = 'scanning-animation';
+                style.textContent = `
+                    @keyframes scanning {
+                        0% { transform: translateX(-100%); }
+                        100% { transform: translateX(100%); }
+                    }
+                `;
+                document.head.appendChild(style);
+            }
+        }
+        
+        function hideScanningProgress() {
+            // This will be replaced by the actual products display
         }
         
         function displayProducts() {
@@ -741,8 +806,9 @@
                 filterBtn.style.backgroundColor = '#6b7280';
             }
             
-            // Reset to first page and reload
+            // Reset to first page and rescan total count
             currentPage = 1;
+            totalProducts = 0; // Reset count to trigger rescan
             loadProducts();
         }
         
@@ -754,15 +820,8 @@
             
             if (totalProducts > 0) {
                 productCountDisplay.style.display = 'block';
-                
-                // Handle Shopify's 25,000 pagination limit
-                if (window.lastApiResponse && window.lastApiResponse.hasMoreProducts) {
-                    totalProductCount.textContent = '25,000+ (Shopify API Limit)';
-                    totalProductCount.style.color = '#f59e0b';
-                } else {
-                    totalProductCount.textContent = totalProducts;
-                    totalProductCount.style.color = '#0c4a6e';
-                }
+                totalProductCount.textContent = totalProducts;
+                totalProductCount.style.color = '#0c4a6e';
                 
                 const startProduct = (currentPage - 1) * productsPerPage + 1;
                 const endProduct = Math.min(currentPage * productsPerPage, totalProducts);
@@ -771,11 +830,7 @@
                 // Show bulk translate button if we have many products
                 if (totalProducts >= 100) {
                     bulkTranslateBtn.style.display = 'inline-block';
-                    if (window.lastApiResponse && window.lastApiResponse.hasMoreProducts) {
-                        bulkTranslateBtn.textContent = `Bulk Translate All 25,000+ Products`;
-                    } else {
-                        bulkTranslateBtn.textContent = `Bulk Translate All ${totalProducts} Products`;
-                    }
+                    bulkTranslateBtn.textContent = `Bulk Translate All ${totalProducts} Products`;
                 }
             } else {
                 productCountDisplay.style.display = 'none';
