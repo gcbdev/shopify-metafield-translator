@@ -109,11 +109,11 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
     console.log('First product:', response.data.products[0] ? response.data.products[0].title : 'No products');
 
     const products = response.data.products;
-    const productsWithSpecs = [];
+    let productsWithSpecs = [];
 
     console.log('Checking metafields for each product...');
-    // Check each product for custom.specification metafield
-    for (const product of products) {
+    // Check each product for custom.specification metafield with parallel processing
+    const metafieldPromises = products.map(async (product) => {
       try {
         console.log(`Checking metafields for product ${product.id}: ${product.title}`);
         const metafieldResponse = await axios.get(`https://${shop}/admin/api/2023-10/products/${product.id}/metafields.json`, {
@@ -129,20 +129,27 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
 
         console.log(`Product ${product.id} metafields:`, metafieldResponse.data.metafields.length);
         if (metafieldResponse.data.metafields && metafieldResponse.data.metafields.length > 0) {
-          productsWithSpecs.push({
+          return {
             id: product.id,
             title: product.title,
             handle: product.handle,
             metafields: metafieldResponse.data.metafields
-          });
-          console.log(`✅ Added product ${product.id} with metafields`);
+          };
         } else {
           console.log(`❌ Product ${product.id} has no custom.specification metafield`);
+          return null;
         }
       } catch (error) {
         console.error(`Error fetching metafields for product ${product.id}:`, error.message);
+        return null;
       }
-    }
+    });
+
+    // Wait for all metafield requests to complete
+    const metafieldResults = await Promise.all(metafieldPromises);
+    
+    // Filter out null results and add to productsWithSpecs
+    productsWithSpecs = metafieldResults.filter(result => result !== null);
 
     console.log('=== FINAL RESULTS ===');
     console.log('Total products with specs:', productsWithSpecs.length);
