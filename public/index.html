@@ -673,9 +673,9 @@
                             <div class="product-actions">
                             <button class="btn" onclick="testTranslateProduct(${product.id})">Test French Translation</button>
                             <button class="btn btn-secondary" onclick="translateProduct(${product.id})">Translate to French</button>
-                            </div>
                         </div>
-                        `;
+                </div>
+            `;
                     }).join('')}
                 </div>
             `;
@@ -1371,7 +1371,7 @@
         alert(`FORCE ENGLISH TRANSLATION COMPLETE!\n\n✅ Successfully translated: ${successCount} products\n❌ Failed: ${errorCount} products\n\n⚠️ Original metafields have been updated to English content.`);
     }
 
-    // Function to fill French field (assumes content is already in English)
+    // Function to fill French field with auto-pagination (20 products per page)
     async function fillFrenchField() {
         const products = document.querySelectorAll('.product-card');
         if (products.length === 0) {
@@ -1379,7 +1379,7 @@
             return;
         }
 
-        const confirmTranslate = confirm(`FILL FRENCH FIELD\n\nThis will translate ${products.length} products from English to French and fill the French localization field.\n\n✅ English content will remain UNTOUCHED\n✅ Only French field will be filled\n\nAre you sure?`);
+        const confirmTranslate = confirm(`FILL FRENCH FIELD WITH AUTO-PAGINATION\n\nThis will translate products from English to French and fill the French localization field.\n\n🔄 Auto-pagination: Processes 20 products, then moves to next page\n✅ English content will remain UNTOUCHED\n✅ Only French field will be filled\n\nAre you sure?`);
         if (!confirmTranslate) return;
 
         // Show progress container
@@ -1390,71 +1390,123 @@
         document.getElementById('force-translate-english-btn').disabled = true;
         document.getElementById('fill-french-field-btn').disabled = true;
         
-        let successCount = 0;
-        let errorCount = 0;
+        let totalSuccessCount = 0;
+        let totalErrorCount = 0;
+        let currentPage = 1;
+        let hasMorePages = true;
         
-        console.log(`FILLING FRENCH FIELD for ${products.length} products...`);
+        console.log(`🌍 STARTING AUTO-PAGINATION FRENCH FIELD FILL...`);
         
-        for (let i = 0; i < products.length; i++) {
-            const product = products[i];
-            const metafieldId = product.dataset.metafieldId;
-            const productTitle = product.querySelector('.product-title').textContent;
-            
-            console.log(`Filling French field for product ${i + 1}: ${productTitle}`);
-            
-            if (!metafieldId) {
-                console.log(`Skipping product ${productTitle} - no metafield ID`);
-                continue;
-            }
-            
+        while (hasMorePages && !window.shouldStopBulkTranslation) {
             try {
-                // Update progress
-                const progress = Math.round(((i + 1) / products.length) * 100);
-                document.getElementById('progress-fill').style.width = progress + '%';
-                document.getElementById('progress-text').textContent = progress + '% Complete';
-                document.getElementById('progress-details').textContent = `Filling French field: ${productTitle}`;
+                // Fetch products for current page
+                const response = await fetch(`/api/products?shop=${shop}&limit=20&page=${currentPage}&showAll=true`);
+                const data = await response.json();
                 
-                // Use the existing endpoint that fills French field only
-                const response = await fetch(`/api/metafield/${metafieldId}`, {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        targetLanguage: 'fr',
-                        shop: shop
-                    })
-                });
+                if (!data.success) {
+                    throw new Error(data.error || 'Failed to fetch products');
+                }
                 
-                const result = await response.json();
+                const products = data.products;
+                console.log(`🌍 Processing page ${currentPage}: ${products.length} products`);
                 
-                if (result.success) {
-                    successCount++;
-                    console.log(`✅ French field filled: ${productTitle}`);
-                } else {
-                    errorCount++;
-                    console.error(`❌ Failed to fill French field for ${productTitle}:`, result.error);
+                let pageSuccessCount = 0;
+                let pageErrorCount = 0;
+                
+                // Process each product on this page
+                for (let i = 0; i < products.length && !window.shouldStopBulkTranslation; i++) {
+                    const product = products[i];
+                    const metafield = product.metafields?.find(m => m.namespace === 'custom' && m.key === 'specification');
+                    const metafieldId = metafield ? metafield.id : '';
+                    
+                    if (!metafieldId) {
+                        console.log(`Skipping product ${product.title} - no metafield ID`);
+                        continue;
+                    }
+                    
+                    try {
+                        // Update progress
+                        const progress = Math.round(((i + 1) / products.length) * 100);
+                        document.getElementById('progress-fill').style.width = progress + '%';
+                        document.getElementById('progress-text').textContent = `Page ${currentPage} - ${progress}% Complete`;
+                        document.getElementById('progress-details').textContent = `Filling French field: ${product.title}`;
+                        
+                        // Use the existing endpoint that fills French field only
+                        const translateResponse = await fetch(`/api/metafield/${metafieldId}`, {
+                            method: 'PUT',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                                targetLanguage: 'fr',
+                                shop: shop
+                            })
+                        });
+                        
+                        const result = await translateResponse.json();
+                        
+                        if (result.success) {
+                            pageSuccessCount++;
+                            totalSuccessCount++;
+                            console.log(`✅ French field filled: ${product.title}`);
+                        } else {
+                            pageErrorCount++;
+                            totalErrorCount++;
+                            console.error(`❌ Failed to fill French field for ${product.title}:`, result.error);
+                        }
+                        
+                    } catch (error) {
+                        pageErrorCount++;
+                        totalErrorCount++;
+                        console.error(`❌ Error filling French field for ${product.title}:`, error.message);
+                    }
+                    
+                    // Small delay to avoid overwhelming the server
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                }
+                
+                // Show page completion
+                console.log(`✅ Page ${currentPage} completed: ${pageSuccessCount} success, ${pageErrorCount} errors`);
+                
+                // Check if there are more pages
+                hasMorePages = data.hasNextPage && data.nextPageInfo;
+                if (hasMorePages) {
+                    currentPage++;
+                    console.log(`🔄 Auto-moving to page ${currentPage}...`);
+                    
+                    // Update progress to show page transition
+                    document.getElementById('progress-text').textContent = `Moving to page ${currentPage}...`;
+                    document.getElementById('progress-details').textContent = `Completed page ${currentPage - 1}, loading next page...`;
+                    
+                    // Small delay before moving to next page
+                    await new Promise(resolve => setTimeout(resolve, 1000));
                 }
                 
             } catch (error) {
-                errorCount++;
-                console.error(`❌ Error filling French field for ${productTitle}:`, error.message);
+                console.error(`Error processing page ${currentPage}:`, error.message);
+                totalErrorCount++;
+                break;
             }
-            
-            // Small delay to avoid overwhelming the server
-            await new Promise(resolve => setTimeout(resolve, 1000));
         }
         
-        // Show final results
-        document.getElementById('progress-text').textContent = 'French Field Fill Complete!';
-        document.getElementById('progress-details').textContent = `✅ Success: ${successCount} | ❌ Failed: ${errorCount}`;
+        // Check if stopped by user
+        if (window.shouldStopBulkTranslation) {
+            document.getElementById('progress-text').textContent = 'Auto-Pagination Stopped';
+            document.getElementById('progress-details').textContent = `Stopped at page ${currentPage}`;
+            alert(`🛑 Auto-pagination stopped!\n\n✅ Total success: ${totalSuccessCount} products\n❌ Total errors: ${totalErrorCount} products\n\nYou can resume later using the "Resume Translation" button.`);
+        } else {
+            // Completed successfully
+            document.getElementById('progress-text').textContent = 'Auto-Pagination Complete!';
+            document.getElementById('progress-details').textContent = `✅ Total success: ${totalSuccessCount} | ❌ Total errors: ${totalErrorCount}`;
+            alert(`🌍 AUTO-PAGINATION FRENCH FIELD FILL COMPLETE!\n\n✅ Successfully filled French field: ${totalSuccessCount} products\n❌ Failed: ${totalErrorCount} products\n\n✅ English content remains UNTOUCHED\n✅ French localization field has been filled\n🔄 Processed ${currentPage} pages automatically`);
+        }
         
         // Re-enable buttons
         document.getElementById('force-translate-english-btn').disabled = false;
         document.getElementById('fill-french-field-btn').disabled = false;
         
-        // Show completion message
-        alert(`FRENCH FIELD FILL COMPLETE!\n\n✅ Successfully filled French field: ${successCount} products\n❌ Failed: ${errorCount} products\n\n✅ English content remains UNTOUCHED\n✅ French localization field has been filled`);
+        // Reset stop flag
+        window.shouldStopBulkTranslation = false;
     }
 
     // Function to FORCE translate ALL products to English (bulk operation)

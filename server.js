@@ -614,8 +614,16 @@ app.post('/api/translate-to-english', async (req, res) => {
     // FORCE translate to English - always translate regardless of detected language
     console.log('FORCE translating to English (no language check)...');
 
+    // Force translation by using a different source language if detected as English
+    let forceSourceLanguage = sourceLanguage;
+    if (sourceLanguage === 'en') {
+      // If detected as English, force it to be treated as French to ensure translation
+      forceSourceLanguage = 'fr';
+      console.log('Content detected as English, forcing source language to French to ensure translation');
+    }
+
     // Translate the content to English
-    const englishContent = await translateJsonContent(content, sourceLanguage, 'en');
+    const englishContent = await translateJsonContent(content, forceSourceLanguage, 'en');
     
     console.log('English content:', JSON.stringify(englishContent, null, 2));
 
