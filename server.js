@@ -549,7 +549,7 @@ app.get('/api/metafield/:id/french', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Missing shop or access token' });
     }
 
-    console.log(`Getting French content for metafield ${id} for shop ${shop}`);
+    console.log(`🔍 Getting French content for metafield ${id} for shop ${shop}`);
 
     // First get the original metafield to find the product ID
     const metafieldResponse = await axios.get(`https://${shop}/admin/api/2023-10/metafields/${id}.json`, {
@@ -560,58 +560,11 @@ app.get('/api/metafield/:id/french', async (req, res) => {
 
     const metafield = metafieldResponse.data.metafield;
     const productId = metafield.owner_id;
+    
+    console.log(`📦 Product ID: ${productId}`);
+    console.log(`🏷️ Metafield namespace: ${metafield.namespace}, key: ${metafield.key}`);
 
-    // Try to get the French metafield (custom.specification_translated or custom.specification_fr)
-    try {
-      // First try to get custom.specification_translated metafield
-      const translatedMetafieldResponse = await axios.get(`https://${shop}/admin/api/2023-10/products/${productId}/metafields.json?namespace=custom&key=specification_translated`, {
-        headers: {
-          'X-Shopify-Access-Token': accessToken
-        }
-      });
-
-      const translatedMetafields = translatedMetafieldResponse.data.metafields;
-      
-      if (translatedMetafields && translatedMetafields.length > 0) {
-        const translatedMetafield = translatedMetafields[0];
-        const translatedContent = JSON.parse(translatedMetafield.value);
-        
-        // Extract French content from the translated structure
-        if (translatedContent.fr) {
-          res.json({
-            success: true,
-            frenchContent: JSON.stringify(translatedContent.fr)
-          });
-          return;
-        }
-      }
-    } catch (translatedError) {
-      console.log('No custom.specification_translated metafield found, trying other methods...');
-    }
-
-    // Try to get custom.specification_fr metafield
-    try {
-      const frenchMetafieldResponse = await axios.get(`https://${shop}/admin/api/2023-10/products/${productId}/metafields.json?namespace=custom&key=specification_fr`, {
-        headers: {
-          'X-Shopify-Access-Token': accessToken
-        }
-      });
-
-      const frenchMetafields = frenchMetafieldResponse.data.metafields;
-      
-      if (frenchMetafields && frenchMetafields.length > 0) {
-        const frenchMetafield = frenchMetafields[0];
-        res.json({
-          success: true,
-          frenchContent: frenchMetafield.value
-        });
-        return;
-      }
-    } catch (frenchError) {
-      console.log('No custom.specification_fr metafield found, trying GraphQL...');
-    }
-
-    // Try GraphQL translations as fallback
+    // Try GraphQL translations first (this is how Shopify stores translations)
     const graphqlQuery = `
       query GetTranslations($id: ID!) {
         product(id: $id) {
@@ -625,6 +578,8 @@ app.get('/api/metafield/:id/french', async (req, res) => {
       }
     `;
 
+    console.log(`🔍 Trying GraphQL translations for product ${productId}...`);
+    
     const graphqlResponse = await axios.post(`https://${shop}/admin/api/2023-10/graphql.json`, {
       query: graphqlQuery,
       variables: {
@@ -637,26 +592,136 @@ app.get('/api/metafield/:id/french', async (req, res) => {
       }
     });
 
-    const translations = graphqlResponse.data.data?.product?.metafield?.translations || [];
-    const frenchTranslation = translations.find(t => t.locale === 'FR');
+    console.log(`📊 GraphQL response:`, JSON.stringify(graphqlResponse.data, null, 2));
 
+    const translations = graphqlResponse.data.data?.product?.metafield?.translations || [];
+    console.log(`🌍 Found ${translations.length} translations:`, translations);
+    
+    const frenchTranslation = translations.find(t => t.locale === 'FR');
+    
     if (frenchTranslation) {
+      console.log(`✅ Found French translation:`, frenchTranslation.value.substring(0, 100) + '...');
       res.json({
         success: true,
         frenchContent: frenchTranslation.value
       });
-    } else {
-      res.json({
-        success: false,
-        error: 'No French translation found'
-      });
+      return;
     }
+
+    // Try to get all metafields for this product to see what's available
+    console.log(`🔍 No GraphQL translation found, checking all metafields for product ${productId}...`);
+    
+    const allMetafieldsResponse = await axios.get(`https://${shop}/admin/api/2023-10/products/${productId}/metafields.json`, {
+      headers: {
+        'X-Shopify-Access-Token': accessToken
+      }
+    });
+
+    const allMetafields = allMetafieldsResponse.data.metafields;
+    console.log(`📋 All metafields for product ${productId}:`, allMetafields.map(m => `${m.namespace}.${m.key}`));
+
+    // Try to get custom.specification_translated metafield
+    const translatedMetafield = allMetafields.find(m => m.namespace === 'custom' && m.key === 'specification_translated');
+    
+    if (translatedMetafield) {
+      console.log(`✅ Found custom.specification_translated metafield`);
+      const translatedContent = JSON.parse(translatedMetafield.value);
+      
+      // Extract French content from the translated structure
+      if (translatedContent.fr) {
+        console.log(`✅ Found French content in translated metafield`);
+        res.json({
+          success: true,
+          frenchContent: JSON.stringify(translatedContent.fr)
+        });
+        return;
+      }
+    }
+
+    // Try to get custom.specification_fr metafield
+    const frenchMetafield = allMetafields.find(m => m.namespace === 'custom' && m.key === 'specification_fr');
+    
+    if (frenchMetafield) {
+      console.log(`✅ Found custom.specification_fr metafield`);
+      res.json({
+        success: true,
+        frenchContent: frenchMetafield.value
+      });
+      return;
+    }
+
+    console.log(`❌ No French translation found for metafield ${id}`);
+    res.json({
+      success: false,
+      error: 'No French translation found',
+      debug: {
+        productId: productId,
+        metafieldId: id,
+        availableMetafields: allMetafields.map(m => `${m.namespace}.${m.key}`),
+        translations: translations
+      }
+    });
   } catch (error) {
-    console.error('Error getting French content:', error.response?.data || error.message);
+    console.error('❌ Error getting French content:', error.response?.data || error.message);
     res.status(500).json({
       success: false,
       error: 'Failed to get French content',
       details: error.response?.data || error.message
+    });
+  }
+});
+
+// Debug endpoint to test French content retrieval
+app.get('/api/debug-french/:metafieldId', async (req, res) => {
+  try {
+    const { metafieldId } = req.params;
+    const shop = req.query.shop;
+    const accessToken = process.env.SHOPIFY_ACCESS_TOKEN;
+
+    console.log(`🔍 DEBUG: Testing French content for metafield ${metafieldId}`);
+
+    // Get the metafield
+    const metafieldResponse = await axios.get(`https://${shop}/admin/api/2023-10/metafields/${metafieldId}.json`, {
+      headers: {
+        'X-Shopify-Access-Token': accessToken
+      }
+    });
+
+    const metafield = metafieldResponse.data.metafield;
+    const productId = metafield.owner_id;
+
+    // Get all metafields for this product
+    const allMetafieldsResponse = await axios.get(`https://${shop}/admin/api/2023-10/products/${productId}/metafields.json`, {
+      headers: {
+        'X-Shopify-Access-Token': accessToken
+      }
+    });
+
+    const allMetafields = allMetafieldsResponse.data.metafields;
+
+    res.json({
+      success: true,
+      debug: {
+        metafieldId: metafieldId,
+        productId: productId,
+        originalMetafield: {
+          namespace: metafield.namespace,
+          key: metafield.key,
+          value: metafield.value.substring(0, 200) + '...'
+        },
+        allMetafields: allMetafields.map(m => ({
+          id: m.id,
+          namespace: m.namespace,
+          key: m.key,
+          value: m.value.substring(0, 100) + '...'
+        }))
+      }
+    });
+  } catch (error) {
+    console.error('Debug error:', error.response?.data || error.message);
+    res.status(500).json({
+      success: false,
+      error: error.response?.data || error.message
     });
   }
 });
