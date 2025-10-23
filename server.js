@@ -156,15 +156,22 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
     console.log('Total products with specs:', productsWithSpecs.length);
     console.log('Products with specs:', productsWithSpecs.map(p => `${p.id}: ${p.title}`));
 
+    // Check if we've hit Shopify's 25,000 pagination limit
+    const hasMoreProducts = response.data.products.length === safeLimit;
+    const estimatedTotal = hasMoreProducts ? '25,000+' : products.length;
+
     res.json({
       success: true,
       products: productsWithSpecs,
       total: productsWithSpecs.length,
+      totalShopifyProducts: products.length,
+      estimatedTotalProducts: estimatedTotal,
+      hasMoreProducts: hasMoreProducts,
       limit: safeLimit,
       page: page,
-      hasNextPage: response.data.products.length === safeLimit,
+      hasNextPage: hasMoreProducts,
       nextPageInfo: response.headers['link'] ? response.headers['link'].match(/<([^>]+)>; rel="next"/)?.[1] : null,
-      message: `Found ${productsWithSpecs.length} products with custom.specification metafields from ${shop}. Showing page ${page} with ${safeLimit} products per page (max 250 per Shopify API).`
+      message: `Found ${productsWithSpecs.length} products with custom.specification metafields from ${shop}. Showing page ${page} with ${safeLimit} products per page. ${hasMoreProducts ? 'Note: Shopify limits pagination to 25,000 products.' : ''}`
     });
   } catch (error) {
     console.error('=== ERROR FETCHING PRODUCTS ===');
@@ -173,13 +180,23 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
     console.error('Error status:', error.response?.status);
     console.error('Shop:', req.shop);
     
-    res.status(500).json({ 
-      error: 'Failed to fetch products',
-      details: error.message,
-      shop: req.shop,
-      status: error.response?.status,
-      response: error.response?.data
-    });
+    // Handle rate limiting specifically
+    if (error.response?.status === 429) {
+      res.status(429).json({ 
+        error: 'Rate limit exceeded',
+        details: 'Shopify API rate limit reached. Please wait before making more requests.',
+        shop: req.shop,
+        retryAfter: error.response.headers['retry-after'] || 60
+      });
+    } else {
+      res.status(500).json({ 
+        error: 'Failed to fetch products',
+        details: error.message,
+        shop: req.shop,
+        status: error.response?.status,
+        response: error.response?.data
+      });
+    }
   }
 });
 

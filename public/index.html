@@ -190,6 +190,48 @@
             font-size: 14px;
         }
         
+        .product-count {
+            background: #f0f9ff;
+            padding: 10px;
+            border-radius: 6px;
+            border-left: 4px solid #0ea5e9;
+            margin-bottom: 15px;
+        }
+        
+        .product-count strong {
+            color: #0c4a6e;
+        }
+        
+        .progress-container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #e5e7eb;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #96bf48, #7ba83a);
+            transition: width 0.3s ease;
+            border-radius: 10px;
+        }
+        
+        .progress-text {
+            text-align: center;
+            font-weight: 600;
+            color: #374151;
+        }
+        
         .loading {
             text-align: center;
             padding: 40px;
@@ -273,8 +315,24 @@
                 <label>Target Language: French</label>
                 <input type="hidden" id="target-language" value="fr">
             </div>
+            <div class="form-group">
+                <div id="product-count-display" class="product-count" style="display: none;">
+                    <strong>Total Products Found: <span id="total-product-count">0</span></strong>
+                    <span id="current-batch-info" class="batch-info"></span>
+                </div>
+            </div>
             <button class="btn" onclick="loadProducts()">Load Products (250 per batch)</button>
             <button class="btn btn-secondary" onclick="translateAll()">Translate All to French</button>
+            <button class="btn" onclick="bulkTranslateAll()" id="bulk-translate-btn" style="display: none;">Bulk Translate All 4000+ Products</button>
+        </div>
+        
+        <div id="progress-container" class="progress-container" style="display: none;">
+            <h3>Bulk Translation Progress</h3>
+            <div class="progress-bar">
+                <div id="progress-fill" class="progress-fill" style="width: 0%"></div>
+            </div>
+            <div id="progress-text" class="progress-text">0% Complete</div>
+            <div id="progress-details" style="text-align: center; color: #6b7280; margin-top: 10px;"></div>
         </div>
         
         <div id="products-container">
@@ -359,10 +417,15 @@
                 
                 if (data.success) {
                     products = data.products;
-                    totalProducts = data.total || data.products.length;
+                    // Store API response for pagination limit checking
+                    window.lastApiResponse = data;
+                    
+                    // Use totalShopifyProducts if available, otherwise fall back to current batch count
+                    totalProducts = data.totalShopifyProducts || data.total || data.products.length;
                     totalPages = Math.ceil(totalProducts / productsPerPage);
                     displayProducts();
                     updateBatchSelector();
+                    updateProductCount();
                 } else {
                     showError('Failed to load products: ' + (data.error || 'Unknown error'));
                 }
@@ -662,6 +725,130 @@
                 currentPage = selectedPage;
                 loadProducts();
             }
+        }
+        
+        function updateProductCount() {
+            const productCountDisplay = document.getElementById('product-count-display');
+            const totalProductCount = document.getElementById('total-product-count');
+            const currentBatchInfo = document.getElementById('current-batch-info');
+            const bulkTranslateBtn = document.getElementById('bulk-translate-btn');
+            
+            if (totalProducts > 0) {
+                productCountDisplay.style.display = 'block';
+                
+                // Handle Shopify's 25,000 pagination limit
+                if (window.lastApiResponse && window.lastApiResponse.hasMoreProducts) {
+                    totalProductCount.textContent = '25,000+ (Shopify API Limit)';
+                    totalProductCount.style.color = '#f59e0b';
+                } else {
+                    totalProductCount.textContent = totalProducts;
+                    totalProductCount.style.color = '#0c4a6e';
+                }
+                
+                const startProduct = (currentPage - 1) * productsPerPage + 1;
+                const endProduct = Math.min(currentPage * productsPerPage, totalProducts);
+                currentBatchInfo.textContent = ` | Current Batch: ${currentPage} of ${totalPages} (Products ${startProduct}-${endProduct})`;
+                
+                // Show bulk translate button if we have many products
+                if (totalProducts >= 100) {
+                    bulkTranslateBtn.style.display = 'inline-block';
+                    if (window.lastApiResponse && window.lastApiResponse.hasMoreProducts) {
+                        bulkTranslateBtn.textContent = `Bulk Translate All 25,000+ Products`;
+                    } else {
+                        bulkTranslateBtn.textContent = `Bulk Translate All ${totalProducts} Products`;
+                    }
+                }
+            } else {
+                productCountDisplay.style.display = 'none';
+                bulkTranslateBtn.style.display = 'none';
+            }
+        }
+        
+        async function bulkTranslateAll() {
+            if (!confirm(`Are you sure you want to translate ALL ${totalProducts} products? This will take a while and cannot be undone.`)) {
+                return;
+            }
+            
+            const progressContainer = document.getElementById('progress-container');
+            const progressFill = document.getElementById('progress-fill');
+            const progressText = document.getElementById('progress-text');
+            const progressDetails = document.getElementById('progress-details');
+            
+            progressContainer.style.display = 'block';
+            
+            let completed = 0;
+            let errors = 0;
+            
+            // Disable buttons during bulk operation
+            document.querySelectorAll('.btn').forEach(btn => btn.disabled = true);
+            
+            try {
+                // Process all pages
+                for (let page = 1; page <= totalPages; page++) {
+                    progressDetails.textContent = `Processing batch ${page} of ${totalPages}...`;
+                    
+                    // Load products for this page
+                    const response = await fetch(`/api/products?shop=${shop}&limit=${productsPerPage}&page=${page}`);
+                    const data = await response.json();
+                    
+                    if (data.success && data.products.length > 0) {
+                        // Translate each product in this batch
+                        for (const product of data.products) {
+                            try {
+                                await translateProductSilent(product.id);
+                                completed++;
+                                
+                                // Update progress
+                                const progress = Math.round((completed / totalProducts) * 100);
+                                progressFill.style.width = `${progress}%`;
+                                progressText.textContent = `${progress}% Complete`;
+                                progressDetails.textContent = `Translated ${completed} of ${totalProducts} products (${errors} errors)`;
+                                
+                                // Small delay to prevent overwhelming the API
+                                await new Promise(resolve => setTimeout(resolve, 100));
+                                
+                            } catch (error) {
+                                console.error(`Error translating product ${product.id}:`, error);
+                                errors++;
+                            }
+                        }
+                    }
+                }
+                
+                showSuccess(`Bulk translation completed! ${completed} products translated successfully. ${errors} errors occurred.`);
+                
+            } catch (error) {
+                console.error('Bulk translation error:', error);
+                showError('Bulk translation failed: ' + error.message);
+            } finally {
+                // Re-enable buttons
+                document.querySelectorAll('.btn').forEach(btn => btn.disabled = false);
+                progressContainer.style.display = 'none';
+            }
+        }
+        
+        async function translateProductSilent(productId) {
+            const targetLanguage = document.getElementById('target-language').value;
+            
+            const response = await fetch(`/api/translate?shop=${shop}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    productId: productId,
+                    targetLanguage: targetLanguage,
+                    sourceLanguage: 'en'
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (!data.success) {
+                throw new Error(data.error || 'Translation failed');
+            }
+            
+            return data;
         }
         
         function updatePagination() {
