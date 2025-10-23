@@ -759,6 +759,34 @@ app.get('/api/debug-french/:metafieldId', async (req, res) => {
     const metafield = metafieldResponse.data.metafield;
     const productId = metafield.owner_id;
 
+    // Test the GraphQL query directly
+    const graphqlQuery = `
+      query GetMetafieldTranslations($id: ID!) {
+        metafield(id: $id) {
+          id
+          namespace
+          key
+          value
+          translations(locales: [FR]) {
+            locale
+            value
+          }
+        }
+      }
+    `;
+
+    const graphqlResponse = await axios.post(`https://${shop}/admin/api/2023-10/graphql.json`, {
+      query: graphqlQuery,
+      variables: {
+        id: `gid://shopify/Metafield/${metafieldId}`
+      }
+    }, {
+      headers: {
+        'X-Shopify-Access-Token': accessToken,
+        'Content-Type': 'application/json'
+      }
+    });
+
     // Get all metafields for this product
     const allMetafieldsResponse = await axios.get(`https://${shop}/admin/api/2023-10/products/${productId}/metafields.json`, {
       headers: {
@@ -778,6 +806,7 @@ app.get('/api/debug-french/:metafieldId', async (req, res) => {
           key: metafield.key,
           value: metafield.value.substring(0, 200) + '...'
         },
+        graphqlResponse: graphqlResponse.data,
         allMetafields: allMetafields.map(m => ({
           id: m.id,
           namespace: m.namespace,

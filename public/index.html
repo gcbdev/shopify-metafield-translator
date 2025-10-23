@@ -468,6 +468,7 @@
                 <button class="btn" onclick="forceTranslateToEnglish()" id="force-translate-english-btn" style="background-color: #3b82f6; font-weight: bold;">🇺🇸 FORCE Translate Original to English</button>
                 <button class="btn" onclick="fillFrenchField()" id="fill-french-field-btn" style="background-color: #10b981; font-weight: bold;">🌍 Fill French Field (English → French)</button>
                 <button class="btn" onclick="fillAllFrenchFields()" id="fill-all-french-fields-btn" style="background-color: #059669; font-weight: bold;">🌍 Fill ALL French Fields</button>
+                <button class="btn" onclick="testDebugEndpoint()" id="debug-btn" style="background-color: #8b5cf6; font-weight: bold;">🔍 Debug French Content</button>
                 <button class="btn" onclick="stopBulkTranslation()" id="stop-bulk-translation" style="background-color: #ef4444; font-weight: bold; display: none;">⏹️ Stop Translation</button>
             </div>
         </div>
@@ -1375,6 +1376,57 @@
                         frenchContentDiv.style.color = '#ef4444';
                     }
                 }
+            }
+        }
+
+        // Debug function to test French content retrieval
+        async function testDebugEndpoint() {
+            const products = document.querySelectorAll('.product-card');
+            if (products.length === 0) {
+                alert('No products to debug. Please load products first.');
+                return;
+            }
+
+            // Get the first product with a metafield ID
+            let testMetafieldId = null;
+            for (const product of products) {
+                const metafieldId = product.dataset.metafieldId;
+                if (metafieldId) {
+                    testMetafieldId = metafieldId;
+                    break;
+                }
+            }
+
+            if (!testMetafieldId) {
+                alert('No metafield ID found to test.');
+                return;
+            }
+
+            console.log(`🔍 Testing debug endpoint for metafield: ${testMetafieldId}`);
+
+            try {
+                const response = await fetch(`/api/debug-french/${testMetafieldId}?shop=${shop}`);
+                const data = await response.json();
+                
+                console.log('🔍 Debug endpoint response:', data);
+                
+                // Show the debug info in an alert
+                const debugInfo = data.debug;
+                const alertMessage = `DEBUG INFO:
+                
+Metafield ID: ${debugInfo.metafieldId}
+Product ID: ${debugInfo.productId}
+Metafield: ${debugInfo.originalMetafield.namespace}.${debugInfo.originalMetafield.key}
+
+GraphQL Response: ${JSON.stringify(debugInfo.graphqlResponse, null, 2)}
+
+Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key}`).join(', ')}`;
+
+                alert(alertMessage);
+                
+            } catch (error) {
+                console.error('Debug endpoint error:', error);
+                alert('Error testing debug endpoint: ' + error.message);
             }
         }
 
