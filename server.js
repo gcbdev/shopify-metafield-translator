@@ -653,11 +653,11 @@ app.get('/api/metafield/:id/french', async (req, res) => {
 
     console.log(`📊 Product GraphQL response:`, JSON.stringify(productGraphqlResponse.data, null, 2));
 
-    const metafieldEdges = productGraphqlResponse.data.data?.product?.metafields?.edges || [];
-    console.log(`🔍 Found ${metafieldEdges.length} metafields via product GraphQL`);
+    const productMetafieldEdges = productGraphqlResponse.data.data?.product?.metafields?.edges || [];
+    console.log(`🔍 Found ${productMetafieldEdges.length} metafields via product GraphQL`);
 
     // Look for the specification metafield with French translation
-    for (const edge of metafieldEdges) {
+    for (const edge of productMetafieldEdges) {
       const metafield = edge.node;
       console.log(`🔍 Checking metafield: ${metafield.namespace}.${metafield.key}`);
       
@@ -757,11 +757,11 @@ app.get('/api/metafield/:id/french', async (req, res) => {
 
     console.log(`📊 Alternative GraphQL response:`, JSON.stringify(alternativeResponse.data, null, 2));
 
-    const metafieldEdges = alternativeResponse.data.data?.product?.metafields?.edges || [];
-    console.log(`🔍 Found ${metafieldEdges.length} metafields via GraphQL`);
+    const alternativeMetafieldEdges = alternativeResponse.data.data?.product?.metafields?.edges || [];
+    console.log(`🔍 Found ${alternativeMetafieldEdges.length} metafields via GraphQL`);
 
     // Look for the specification metafield with French translation
-    for (const edge of metafieldEdges) {
+    for (const edge of alternativeMetafieldEdges) {
       const metafield = edge.node;
       console.log(`🔍 Checking metafield: ${metafield.namespace}.${metafield.key}`);
       
