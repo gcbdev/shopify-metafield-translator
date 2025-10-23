@@ -71,7 +71,7 @@ const authenticateShopify = async (req, res, next) => {
   }
 };
 
-// Get total product count from your Shopify store (simplified version)
+// Get total product count from your Shopify store (full scan)
 app.get('/api/products/count', authenticateShopify, async (req, res) => {
   try {
     const shop = req.shop;
@@ -80,40 +80,65 @@ app.get('/api/products/count', authenticateShopify, async (req, res) => {
     console.log('=== PRODUCT COUNT SCAN START ===');
     console.log('Shop:', shop);
 
-    // Get first page to estimate total
-    const response = await axios.get(`https://${shop}/admin/api/2023-10/products.json`, {
-      headers: {
-        'X-Shopify-Access-Token': accessToken,
-        'Content-Type': 'application/json'
-      },
-      params: {
+    let totalCount = 0;
+    let pageInfo = null;
+    let hasMore = true;
+    let pageCount = 0;
+
+    // Scan through ALL pages to get accurate count
+    while (hasMore) {
+      pageCount++;
+      console.log(`Scanning page ${pageCount}...`);
+      
+      const params = {
         limit: 250,
         fields: 'id,title,handle'
+      };
+      
+      if (pageInfo) {
+        params.page_info = pageInfo;
       }
-    });
 
-    const firstPageProducts = response.data.products;
-    let totalCount = firstPageProducts.length;
+      const response = await axios.get(`https://${shop}/admin/api/2023-10/products.json`, {
+        headers: {
+          'X-Shopify-Access-Token': accessToken,
+          'Content-Type': 'application/json'
+        },
+        params: params
+      });
 
-    console.log(`First page: ${firstPageProducts.length} products`);
+      const products = response.data.products;
+      totalCount += products.length;
 
-    // Check if there are more pages by looking at the link header
-    const linkHeader = response.headers['link'];
-    if (linkHeader && linkHeader.includes('rel="next"')) {
-      console.log('More pages detected, estimating total...');
-      // If there are more pages, estimate based on first page
-      // This is a conservative estimate - actual count could be higher
-      totalCount = Math.max(totalCount, 250); // At least 250 if there are more pages
+      console.log(`Page ${pageCount}: ${products.length} products, total so far: ${totalCount}`);
+
+      // Check for next page
+      const linkHeader = response.headers['link'];
+      if (linkHeader && linkHeader.includes('rel="next"')) {
+        const nextMatch = linkHeader.match(/<([^>]+)>; rel="next"/);
+        pageInfo = nextMatch ? nextMatch[1] : null;
+        hasMore = !!pageInfo;
+        console.log('Found next page, continuing...');
+      } else {
+        hasMore = false;
+        console.log('No more pages found');
+      }
+
+      // Safety check to prevent infinite loops
+      if (pageCount > 1000) {
+        console.log('Safety limit reached (1000 pages), stopping scan');
+        break;
+      }
     }
 
     console.log('=== PRODUCT COUNT SCAN COMPLETE ===');
-    console.log('Estimated total products:', totalCount);
+    console.log(`Total products found: ${totalCount} across ${pageCount} pages`);
 
     res.json({
       success: true,
       totalProducts: totalCount,
-      message: `Found ${totalCount} products (estimated from first page)`,
-      isEstimate: true
+      message: `Found ${totalCount} total products in your store (scanned ${pageCount} pages)`,
+      isEstimate: false
     });
 
   } catch (error) {
