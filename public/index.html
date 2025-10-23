@@ -756,8 +756,6 @@
         
         function showLoading() {
             document.getElementById('products-container').innerHTML = '<div class="loading">Loading...</div>';
-            document.getElementById('pagination-container').style.display = 'none';
-            document.getElementById('batch-selector-container').style.display = 'none';
         }
         
         
@@ -931,40 +929,6 @@
             return data;
         }
         
-        function updatePagination() {
-            const paginationContainer = document.getElementById('pagination-container');
-            const paginationInfo = document.getElementById('pagination-info');
-            const prevBtn = document.getElementById('prev-btn');
-            const nextBtn = document.getElementById('next-btn');
-            
-            if (totalPages > 1) {
-                paginationContainer.style.display = 'flex';
-                
-                const startItem = (currentPage - 1) * productsPerPage + 1;
-                const endItem = Math.min(currentPage * productsPerPage, totalProducts);
-                
-                paginationInfo.textContent = `Batch ${currentPage} of ${totalPages} - Products ${startItem}-${endItem}`;
-                
-                prevBtn.disabled = currentPage <= 1;
-                nextBtn.disabled = currentPage >= totalPages;
-            } else {
-                paginationContainer.style.display = 'none';
-            }
-        }
-        
-        async function loadPreviousPage() {
-            if (currentPage > 1) {
-                currentPage--;
-                await loadProducts();
-            }
-        }
-        
-        async function loadNextPage() {
-            if (currentPage < totalPages) {
-                currentPage++;
-                await loadProducts();
-            }
-        }
         
         function showError(message) {
             const errorDiv = document.getElementById('error-message');
