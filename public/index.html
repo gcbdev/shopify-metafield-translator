@@ -656,8 +656,12 @@
             // Show products immediately without gradual loading to prevent twitching
             container.innerHTML = `
                 <div class="products-list">
-                    ${products.map(product => `
-                        <div class="product-card">
+                    ${products.map(product => {
+                        const metafield = product.metafields?.find(m => m.namespace === 'custom' && m.key === 'specification');
+                        const metafieldId = metafield ? metafield.id : '';
+                        console.log(`Product ${product.title}: metafieldId = ${metafieldId}, metafields =`, product.metafields);
+                        return `
+                        <div class="product-card" data-metafield-id="${metafieldId}">
                             <div class="product-info">
                             <div class="product-title">${product.title}</div>
                             <div class="product-handle">${product.handle}</div>
@@ -668,7 +672,8 @@
                             <button class="btn btn-secondary" onclick="translateProduct(${product.id})">Translate to French</button>
                             </div>
                         </div>
-                    `).join('')}
+                        `;
+                    }).join('')}
                 </div>
             `;
             
