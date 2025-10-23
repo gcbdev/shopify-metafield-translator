@@ -77,6 +77,7 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
     const shop = req.shop;
     const limit = parseInt(req.query.limit) || 250; // Default to 250 products (Shopify's max)
     const page = parseInt(req.query.page) || 1; // Default to page 1
+    const showAllProducts = req.query.showAll === 'true'; // Option to show all products, not just those with metafields
     const maxLimit = 250; // Maximum limit for Shopify API
     const safeLimit = Math.min(Math.max(limit, 1), maxLimit);
     const offset = (page - 1) * safeLimit;
@@ -111,50 +112,66 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
     const products = response.data.products;
     let productsWithSpecs = [];
 
-    console.log('Checking metafields for each product...');
-    // Check each product for custom.specification metafield with parallel processing
-    const metafieldPromises = products.map(async (product) => {
-      try {
-        console.log(`Checking metafields for product ${product.id}: ${product.title}`);
-        const metafieldResponse = await axios.get(`https://${shop}/admin/api/2023-10/products/${product.id}/metafields.json`, {
-          headers: {
-            'X-Shopify-Access-Token': accessToken,
-            'Content-Type': 'application/json'
-          },
-          params: {
-            namespace: 'custom',
-            key: 'specification'
-          }
-        });
+    if (showAllProducts) {
+      console.log('Showing ALL products (not filtering by metafields)...');
+      // Return all products without metafield filtering
+      productsWithSpecs = products.map(product => ({
+        id: product.id,
+        title: product.title,
+        handle: product.handle,
+        metafields: [] // Empty metafields array for products without specs
+      }));
+    } else {
+      console.log('Checking metafields for each product...');
+      // Check each product for custom.specification metafield with parallel processing
+      const metafieldPromises = products.map(async (product) => {
+        try {
+          console.log(`Checking metafields for product ${product.id}: ${product.title}`);
+          const metafieldResponse = await axios.get(`https://${shop}/admin/api/2023-10/products/${product.id}/metafields.json`, {
+            headers: {
+              'X-Shopify-Access-Token': accessToken,
+              'Content-Type': 'application/json'
+            },
+            params: {
+              namespace: 'custom',
+              key: 'specification'
+            }
+          });
 
-        console.log(`Product ${product.id} metafields:`, metafieldResponse.data.metafields.length);
-        if (metafieldResponse.data.metafields && metafieldResponse.data.metafields.length > 0) {
-          return {
-            id: product.id,
-            title: product.title,
-            handle: product.handle,
-            metafields: metafieldResponse.data.metafields
-          };
-        } else {
-          console.log(`❌ Product ${product.id} has no custom.specification metafield`);
+          console.log(`Product ${product.id} metafields:`, metafieldResponse.data.metafields.length);
+          if (metafieldResponse.data.metafields && metafieldResponse.data.metafields.length > 0) {
+            return {
+              id: product.id,
+              title: product.title,
+              handle: product.handle,
+              metafields: metafieldResponse.data.metafields
+            };
+          } else {
+            console.log(`❌ Product ${product.id} has no custom.specification metafield`);
+            return null;
+          }
+        } catch (error) {
+          console.error(`Error fetching metafields for product ${product.id}:`, error.message);
           return null;
         }
-      } catch (error) {
-        console.error(`Error fetching metafields for product ${product.id}:`, error.message);
-        return null;
-      }
-    });
+      });
 
-    // Wait for all metafield requests to complete
-    const metafieldResults = await Promise.all(metafieldPromises);
-    
-    // Filter out null results and add to productsWithSpecs
-    productsWithSpecs = metafieldResults.filter(result => result !== null);
+      // Wait for all metafield requests to complete
+      const metafieldResults = await Promise.all(metafieldPromises);
+      
+      // Filter out null results and add to productsWithSpecs
+      productsWithSpecs = metafieldResults.filter(result => result !== null);
+    }
 
     console.log('=== FINAL RESULTS ===');
     console.log('Total products received from Shopify:', products.length);
     console.log('Total products with specs:', productsWithSpecs.length);
     console.log('Products with specs:', productsWithSpecs.map(p => `${p.id}: ${p.title}`));
+    console.log('=== DEBUGGING INFO ===');
+    console.log('Requested limit:', safeLimit);
+    console.log('Actual products returned:', products.length);
+    console.log('Products with metafields:', productsWithSpecs.length);
+    console.log('Filtering ratio:', `${productsWithSpecs.length}/${products.length} = ${Math.round((productsWithSpecs.length/products.length)*100)}%`);
 
     // Check if we've hit Shopify's 25,000 pagination limit
     const hasMoreProducts = response.data.products.length === safeLimit;

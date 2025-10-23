@@ -322,6 +322,7 @@
                 </div>
             </div>
             <button class="btn" onclick="loadProducts()">Load Products (250 per batch)</button>
+            <button class="btn btn-secondary" onclick="toggleProductFilter()" id="filter-toggle-btn">Show All Products</button>
             <button class="btn btn-secondary" onclick="translateAll()">Translate All to French</button>
             <button class="btn" onclick="bulkTranslateAll()" id="bulk-translate-btn" style="display: none;">Bulk Translate All 4000+ Products</button>
         </div>
@@ -382,6 +383,7 @@
         let totalProducts = 0;
         let productsPerPage = 250;
         let totalPages = 0;
+        let showAllProducts = false; // Toggle for showing all products vs only those with metafields
         
         // Get URL parameters
         const urlParams = new URLSearchParams(window.location.search);
@@ -410,7 +412,7 @@
                     return;
                 }
                 
-                const response = await fetch(`/api/products?shop=${shop}&limit=${productsPerPage}&page=${currentPage}`);
+                const response = await fetch(`/api/products?shop=${shop}&limit=${productsPerPage}&page=${currentPage}&showAll=${showAllProducts}`);
                 const data = await response.json();
                 
                 console.log('Products API response:', data);
@@ -478,7 +480,7 @@
                     return metafield.value.substring(0, 200) + '...';
                 }
             }
-            return 'No metafield found';
+            return 'No metafield found - Click "Translate to French" to create one';
         }
         
         async function testTranslateProduct(productId) {
@@ -725,6 +727,23 @@
                 currentPage = selectedPage;
                 loadProducts();
             }
+        }
+        
+        function toggleProductFilter() {
+            showAllProducts = !showAllProducts;
+            const filterBtn = document.getElementById('filter-toggle-btn');
+            
+            if (showAllProducts) {
+                filterBtn.textContent = 'Show Only Products with Metafields';
+                filterBtn.style.backgroundColor = '#16a34a';
+            } else {
+                filterBtn.textContent = 'Show All Products';
+                filterBtn.style.backgroundColor = '#6b7280';
+            }
+            
+            // Reset to first page and reload
+            currentPage = 1;
+            loadProducts();
         }
         
         function updateProductCount() {
