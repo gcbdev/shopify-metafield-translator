@@ -1153,7 +1153,63 @@
             }
         }
         
-        // Function to translate current page products to English
+        // Function to detect the language of JSON content
+    function detectLanguage(jsonContent) {
+        if (typeof jsonContent === 'string') {
+            // Simple language detection based on common words
+            const text = jsonContent.toLowerCase();
+            
+            // French indicators
+            if (text.includes('pour') || text.includes('avec') || text.includes('dans') || 
+                text.includes('sur') || text.includes('sous') || text.includes('entre') ||
+                text.includes('marque') || text.includes('couleur') || text.includes('taille') ||
+                text.includes('prix') || text.includes('description') || text.includes('spécifications')) {
+                return 'fr';
+            }
+            
+            // Spanish indicators
+            if (text.includes('para') || text.includes('con') || text.includes('en') || 
+                text.includes('sobre') || text.includes('bajo') || text.includes('entre') ||
+                text.includes('marca') || text.includes('color') || text.includes('tamaño') ||
+                text.includes('precio') || text.includes('descripción') || text.includes('especificaciones')) {
+                return 'es';
+            }
+            
+            // German indicators
+            if (text.includes('für') || text.includes('mit') || text.includes('in') || 
+                text.includes('auf') || text.includes('unter') || text.includes('zwischen') ||
+                text.includes('marke') || text.includes('farbe') || text.includes('größe') ||
+                text.includes('preis') || text.includes('beschreibung') || text.includes('spezifikationen')) {
+                return 'de';
+            }
+            
+            // Default to English if no indicators found
+            return 'en';
+        } else if (Array.isArray(jsonContent)) {
+            // Check first few items in array
+            for (let i = 0; i < Math.min(3, jsonContent.length); i++) {
+                const detected = detectLanguage(jsonContent[i]);
+                if (detected !== 'en') {
+                    return detected;
+                }
+            }
+            return 'en';
+        } else if (jsonContent && typeof jsonContent === 'object') {
+            // Check object values
+            const values = Object.values(jsonContent);
+            for (let i = 0; i < Math.min(3, values.length); i++) {
+                const detected = detectLanguage(values[i]);
+                if (detected !== 'en') {
+                    return detected;
+                }
+            }
+            return 'en';
+        }
+        
+        return 'en'; // Default to English
+    }
+
+    // Function to translate current page products to English
     async function translateToEnglish() {
         const products = document.querySelectorAll('.product-card');
         if (products.length === 0) {
@@ -1173,10 +1229,14 @@
         let successCount = 0;
         let errorCount = 0;
 
+        console.log(`Found ${products.length} products to process`);
+        
         for (let i = 0; i < products.length; i++) {
             const product = products[i];
             const metafieldId = product.dataset.metafieldId;
             const productTitle = product.querySelector('.product-title').textContent;
+
+            console.log(`Processing product ${i + 1}: ${productTitle}, metafieldId: ${metafieldId}`);
 
             if (!metafieldId) {
                 console.log(`Skipping product ${productTitle} - no metafield ID`);
@@ -1197,12 +1257,15 @@
                 }
 
                 const originalContent = metafieldData.metafield.value;
+                console.log(`Original content for ${productTitle}:`, originalContent);
+                
                 let jsonContent;
 
                 try {
                     jsonContent = JSON.parse(originalContent);
+                    console.log(`Parsed JSON for ${productTitle}:`, jsonContent);
                 } catch (parseError) {
-                    console.log(`Skipping product ${productTitle} - invalid JSON`);
+                    console.log(`Skipping product ${productTitle} - invalid JSON:`, parseError.message);
                     continue;
                 }
 
