@@ -87,15 +87,21 @@
         }
         
         .products-list {
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-            padding: 10px;
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 15px !important;
+            padding: 10px !important;
             min-height: 200px;
             opacity: 1;
             transition: opacity 0.3s ease;
             width: 100%;
             box-sizing: border-box;
+        }
+        
+        .products-list .product-card {
+            display: flex !important;
+            flex-direction: column !important;
+            width: 100% !important;
         }
         
         .product-card {
@@ -263,6 +269,14 @@
         #products-container > * {
             width: 100%;
             box-sizing: border-box;
+        }
+        
+        /* Prevent horizontal stacking during loading */
+        #products-container .product-card {
+            display: flex !important;
+            flex-direction: column !important;
+            width: 100% !important;
+            margin-bottom: 15px !important;
         }
         
         .progress-bar {
@@ -631,52 +645,29 @@
                 return;
             }
             
-            // Show loading first
+            // Show products immediately without gradual loading to prevent twitching
             container.innerHTML = `
-                <div class="loading">
-                    <div class="loading-spinner"></div>
-                    <div class="loading-text">Preparing Products...</div>
-                    <div class="loading-subtext">Loading ${products.length} products</div>
+                <div class="products-list">
+                    ${products.map(product => `
+                        <div class="product-card">
+                            <div class="product-info">
+                            <div class="product-title">${product.title}</div>
+                            <div class="product-handle">${product.handle}</div>
+                            <div class="metafield-preview">${getMetafieldPreview(product)}</div>
+                            </div>
+                            <div class="product-actions">
+                            <button class="btn" onclick="testTranslateProduct(${product.id})">Test French Translation</button>
+                            <button class="btn btn-secondary" onclick="translateProduct(${product.id})">Translate to French</button>
+                            </div>
+                        </div>
+                    `).join('')}
                 </div>
             `;
             
-            // Gradually show products with delay
-            setTimeout(() => {
-                let currentIndex = 0;
-                const showNextProduct = () => {
-                    if (currentIndex < products.length) {
-                        const productsToShow = products.slice(0, currentIndex + 1);
-                        
-                        container.innerHTML = `
-                            <div class="products-list">
-                                ${productsToShow.map((product, index) => `
-                                    <div class="product-card" style="opacity: 0; transform: translateY(20px); animation: fadeInUp 0.5s ease forwards; animation-delay: ${index * 0.1}s;">
-                                        <div class="product-info">
-                                            <div class="product-title">${product.title}</div>
-                                            <div class="product-handle">${product.handle}</div>
-                                            <div class="metafield-preview">${getMetafieldPreview(product)}</div>
-                                        </div>
-                                        <div class="product-actions">
-                                            <button class="btn" onclick="testTranslateProduct(${product.id})">Test French Translation</button>
-                                            <button class="btn btn-secondary" onclick="translateProduct(${product.id})">Translate to French</button>
-                                        </div>
-                                    </div>
-                                `).join('')}
-                            </div>
-                        `;
-                        
-                        currentIndex++;
-                        setTimeout(showNextProduct, 200); // Show next product every 200ms
-                    } else {
-                        // All products loaded, update count
-                        if (products.length > 0) {
-                            updateProductCount();
-                        }
-                    }
-                };
-                
-                showNextProduct();
-            }, 1000); // Wait 1 second before starting to show products
+            // Update product count and pagination
+            if (products.length > 0) {
+                updateProductCount();
+            }
         }
         
         
