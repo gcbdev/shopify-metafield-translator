@@ -217,7 +217,7 @@ app.get('/api/products/count', authenticateShopify, async (req, res) => {
 app.get('/api/products', authenticateShopify, async (req, res) => {
   try {
     const shop = req.shop;
-    const limit = parseInt(req.query.limit) || 20; // Default to 20 products per page
+    const limit = parseInt(req.query.limit) || 250; // Default to 250 products per page
     const page = parseInt(req.query.page) || 1; // Default to page 1
     const showAllProducts = req.query.showAll === 'true'; // Option to show all products, not just those with metafields
     const maxLimit = 250; // Maximum limit for Shopify API
