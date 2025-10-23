@@ -467,13 +467,26 @@
                     totalProducts = data.totalProducts;
                     totalPages = Math.ceil(totalProducts / productsPerPage);
                     console.log(`Total products found: ${totalProducts}`);
-                    showSuccess(`Found ${totalProducts} total products in your store!`);
+                    
+                    if (data.isEstimate) {
+                        showSuccess(`Found ${totalProducts} products (estimated from first page)`);
+                    } else {
+                        showSuccess(`Found ${totalProducts} total products in your store!`);
+                    }
                 } else {
                     showError('Failed to scan products: ' + (data.error || 'Unknown error'));
+                    // Set a default estimate to allow the app to work
+                    totalProducts = 250; // Default estimate
+                    totalPages = Math.ceil(totalProducts / productsPerPage);
+                    showSuccess(`Using estimated count of ${totalProducts} products`);
                 }
             } catch (error) {
                 console.error('Error scanning products:', error);
                 showError('Error scanning products: ' + error.message);
+                // Set a default estimate to allow the app to work
+                totalProducts = 250; // Default estimate
+                totalPages = Math.ceil(totalProducts / productsPerPage);
+                showSuccess(`Using estimated count of ${totalProducts} products`);
             } finally {
                 isScanning = false;
                 hideScanningProgress();
