@@ -818,6 +818,210 @@ app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
   }
 });
 
+// Bulk translate ALL products to French
+app.post('/api/bulk-translate-all', authenticateShopify, async (req, res) => {
+  try {
+    const shop = req.shop;
+    const accessToken = req.accessToken;
+    const targetLanguage = req.body.targetLanguage || 'fr';
+    const sourceLanguage = req.body.sourceLanguage || 'en';
+
+    console.log('=== BULK TRANSLATE ALL START ===');
+    console.log('Shop:', shop);
+    console.log('Target Language:', targetLanguage);
+    console.log('Source Language:', sourceLanguage);
+
+    let allProducts = [];
+    let nextPageInfo = null;
+
+    // First, get ALL products from the store
+    console.log('Fetching all products...');
+    
+    // Get first page
+    const firstResponse = await axios.get(`https://${shop}/admin/api/2023-10/products.json`, {
+      headers: {
+        'X-Shopify-Access-Token': accessToken,
+        'Content-Type': 'application/json'
+      },
+      params: {
+        limit: 250,
+        fields: 'id,title,handle'
+      }
+    });
+
+    allProducts = [...firstResponse.data.products];
+    console.log(`First page: ${firstResponse.data.products.length} products`);
+
+    // Check for pagination
+    const linkHeader = firstResponse.headers['link'];
+    if (linkHeader && linkHeader.includes('rel="next"')) {
+      const nextMatch = linkHeader.match(/<([^>]+)>; rel="next"/);
+      if (nextMatch) {
+        const nextUrl = nextMatch[1];
+        const urlParams = new URLSearchParams(nextUrl.split('?')[1]);
+        nextPageInfo = urlParams.get('page_info');
+        console.log('Found pagination, continuing...');
+      }
+    }
+
+    // Continue fetching all pages
+    while (nextPageInfo) {
+      try {
+        const response = await axios.get(`https://${shop}/admin/api/2023-10/products.json`, {
+          headers: {
+            'X-Shopify-Access-Token': accessToken,
+            'Content-Type': 'application/json'
+          },
+          params: {
+            limit: 250,
+            fields: 'id,title,handle',
+            page_info: nextPageInfo
+          }
+        });
+
+        allProducts = [...allProducts, ...response.data.products];
+        console.log(`Page: ${response.data.products.length} products, Total so far: ${allProducts.length}`);
+
+        // Check for next page
+        const newLinkHeader = response.headers['link'];
+        if (newLinkHeader && newLinkHeader.includes('rel="next"')) {
+          const nextMatch = newLinkHeader.match(/<([^>]+)>; rel="next"/);
+          if (nextMatch) {
+            const nextUrl = nextMatch[1];
+            const urlParams = new URLSearchParams(nextUrl.split('?')[1]);
+            nextPageInfo = urlParams.get('page_info');
+          } else {
+            nextPageInfo = null;
+          }
+        } else {
+          nextPageInfo = null;
+        }
+
+        // Safety check
+        if (allProducts.length > 10000) {
+          console.log('Safety limit reached (10,000 products), stopping fetch');
+          break;
+        }
+
+      } catch (pageError) {
+        console.error('Error fetching page:', pageError.message);
+        break;
+      }
+    }
+
+    console.log(`Total products to translate: ${allProducts.length}`);
+
+    // Now translate all products
+    const results = {
+      totalProducts: allProducts.length,
+      processed: 0,
+      errors: 0,
+      success: 0,
+      skipped: 0,
+      details: []
+    };
+
+    // Process products in batches to avoid overwhelming the API
+    const batchSize = 5; // Smaller batches for better rate limit management
+    for (let i = 0; i < allProducts.length; i += batchSize) {
+      const batch = allProducts.slice(i, i + batchSize);
+      
+      console.log(`Processing batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(allProducts.length/batchSize)} (${batch.length} products)`);
+      
+      // Process batch in parallel
+      const batchPromises = batch.map(async (product) => {
+        try {
+          // Check if product has metafield
+          const metafieldResponse = await axios.get(`https://${shop}/admin/api/2023-10/products/${product.id}/metafields.json`, {
+            headers: {
+              'X-Shopify-Access-Token': accessToken,
+              'Content-Type': 'application/json'
+            },
+            params: {
+              namespace: 'custom',
+              key: 'specification'
+            }
+          });
+
+          if (metafieldResponse.data.metafields.length === 0) {
+            return { productId: product.id, status: 'skipped', reason: 'No metafield found', title: product.title };
+          }
+
+          const metafield = metafieldResponse.data.metafields[0];
+          let jsonContent;
+
+          try {
+            jsonContent = JSON.parse(metafield.value);
+          } catch (parseError) {
+            return { productId: product.id, status: 'error', reason: 'Invalid JSON in metafield', title: product.title };
+          }
+
+          // Translate the JSON content
+          const translatedContent = await translateJsonContent(jsonContent, sourceLanguage, targetLanguage);
+
+          // Update the metafield
+          await axios.put(`https://${shop}/admin/api/2023-10/metafields/${metafield.id}.json`, {
+            metafield: {
+              id: metafield.id,
+              value: JSON.stringify(translatedContent)
+            }
+          }, {
+            headers: {
+              'X-Shopify-Access-Token': accessToken,
+              'Content-Type': 'application/json'
+            }
+          });
+
+          return { productId: product.id, status: 'success', title: product.title };
+
+        } catch (error) {
+          console.error(`Error translating product ${product.id}:`, error.message);
+          return { productId: product.id, status: 'error', reason: error.message, title: product.title };
+        }
+      });
+
+      const batchResults = await Promise.all(batchPromises);
+      
+      // Update results
+      batchResults.forEach(result => {
+        results.processed++;
+        if (result.status === 'success') {
+          results.success++;
+        } else if (result.status === 'error') {
+          results.errors++;
+        } else if (result.status === 'skipped') {
+          results.skipped++;
+        }
+        results.details.push(result);
+      });
+
+      // Rate limiting - wait between batches
+      if (i + batchSize < allProducts.length) {
+        await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay between batches
+      }
+    }
+
+    console.log('=== BULK TRANSLATE ALL COMPLETE ===');
+    console.log(`Total processed: ${results.processed}`);
+    console.log(`Successful: ${results.success}`);
+    console.log(`Errors: ${results.errors}`);
+    console.log(`Skipped: ${results.skipped}`);
+
+    res.json({
+      success: true,
+      message: `Bulk translation completed! Processed ${results.processed} products. ${results.success} successful, ${results.errors} errors, ${results.skipped} skipped.`,
+      results: results
+    });
+
+  } catch (error) {
+    console.error('Bulk translate all error:', error);
+    res.status(500).json({
+      error: 'Bulk translation failed',
+      details: error.message
+    });
+  }
+});
+
 // Error handling middleware
 app.use((error, req, res, next) => {
   console.error('Error:', error);

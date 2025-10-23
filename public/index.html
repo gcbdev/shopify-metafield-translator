@@ -229,6 +229,7 @@
             border-radius: 8px;
             margin: 20px 0;
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            border: 2px solid #dc2626;
         }
         
         .progress-bar {
@@ -347,6 +348,7 @@
                 <span id="page-info" class="page-info">Page 1 of 1</span>
                 <button class="btn btn-secondary" onclick="loadNextPage()" id="next-page-btn" disabled>Next</button>
                 <button class="btn" onclick="bulkTranslateCurrentPage()" id="bulk-translate-current-btn">Translate Current Page to French</button>
+                <button class="btn" onclick="bulkTranslateAllProducts()" id="bulk-translate-all-btn" style="background-color: #dc2626; font-weight: bold;">🚀 Translate ALL Products to French</button>
             </div>
         </div>
         
@@ -397,6 +399,8 @@
         let isScanning = false; // Flag to track if we're scanning products
         let nextPageInfo = null; // Shopify pagination cursor
         let previousPageInfo = null; // For going back
+        let pageHistory = []; // Track page history for proper back navigation
+        let currentPageIndex = 0; // Current position in page history
         
         // Get URL parameters
         const urlParams = new URLSearchParams(window.location.search);
@@ -429,6 +433,12 @@
                     await scanProductCount();
                 }
                 
+                // Initialize page history on first load
+                if (pageHistory.length === 0 && !nextPageInfo) {
+                    pageHistory = [null]; // Start with null for first page
+                    currentPageIndex = 0;
+                }
+                
                 showLoading();
                 
                 const response = await fetch(`/api/products?shop=${shop}&limit=${productsPerPage}&showAll=${showAllProducts}&page_info=${nextPageInfo || ''}`);
@@ -441,8 +451,15 @@
                     // Store API response for pagination limit checking
                     window.lastApiResponse = data;
                     
-                    // Store pagination info
+                    // Store pagination info and update page history
+                    if (nextPageInfo && !pageHistory.includes(nextPageInfo)) {
+                        pageHistory.push(nextPageInfo);
+                        currentPageIndex = pageHistory.length - 1;
+                    }
                     nextPageInfo = data.nextPageInfo;
+                    
+                    // Update current page based on history
+                    currentPage = currentPageIndex + 1;
                     
                     // Use the scanned total count, not the API response count
                     totalPages = Math.ceil(totalProducts / productsPerPage);
@@ -790,15 +807,14 @@
                 totalProductCount.textContent = totalProducts;
                 totalProductCount.style.color = '#0c4a6e';
                 
-                const startProduct = (currentPage - 1) * productsPerPage + 1;
-                const endProduct = Math.min(currentPage * productsPerPage, totalProducts);
-                currentBatchInfo.textContent = ` | Showing ${startProduct}-${endProduct} of ${totalProducts} products`;
+                // Show actual products loaded on this page
+                currentBatchInfo.textContent = ` | Showing ${products.length} products on this page (Page ${currentPage} of ${totalPages})`;
                 
                 // Update page info
                 pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
                 
                 // Update pagination buttons
-                prevBtn.disabled = currentPage <= 1;
+                prevBtn.disabled = currentPageIndex <= 0;
                 nextBtn.disabled = !nextPageInfo;
             } else {
                 productCountDisplay.style.display = 'none';
@@ -809,21 +825,88 @@
         }
         
         async function loadPreviousPage() {
-            // For Shopify pagination, we need to implement a different approach
-            // Since we can't go back with cursors, we'll reload from the beginning
-            // and navigate forward to the previous page
-            if (currentPage > 1) {
-                currentPage--;
-                // Reset pagination and reload
-                nextPageInfo = null;
+            if (currentPageIndex > 0) {
+                currentPageIndex--;
+                currentPage = currentPageIndex + 1;
+                
+                // Use the previous page's cursor
+                const previousCursor = pageHistory[currentPageIndex - 1] || null;
+                nextPageInfo = previousCursor;
+                
                 await loadProducts();
             }
         }
         
         async function loadNextPage() {
             if (nextPageInfo) {
-                currentPage++;
+                currentPageIndex++;
+                currentPage = currentPageIndex + 1;
                 await loadProducts();
+            }
+        }
+        
+        async function bulkTranslateAllProducts() {
+            if (!confirm(`⚠️ WARNING: This will translate ALL ${totalProducts} products in your store to French!\n\nThis is a major operation that will:\n- Process every single product\n- Translate all metafields to French\n- Take a significant amount of time\n- Cannot be easily undone\n\nAre you absolutely sure you want to proceed?`)) {
+                return;
+            }
+            
+            const progressContainer = document.getElementById('progress-container');
+            const progressFill = document.getElementById('progress-fill');
+            const progressText = document.getElementById('progress-text');
+            const progressDetails = document.getElementById('progress-details');
+            
+            progressContainer.style.display = 'block';
+            progressText.textContent = 'Starting bulk translation of ALL products...';
+            progressDetails.textContent = `Total products to process: ${totalProducts}`;
+            
+            // Disable buttons during bulk operation
+            document.querySelectorAll('.btn').forEach(btn => btn.disabled = true);
+            
+            try {
+                console.log('Starting bulk translation of all products...');
+                
+                const response = await fetch(`/api/bulk-translate-all?shop=${shop}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        targetLanguage: 'fr',
+                        sourceLanguage: 'en'
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    progressFill.style.width = '100%';
+                    progressText.textContent = 'Bulk translation completed!';
+                    progressDetails.textContent = data.message;
+                    
+                    showSuccess(data.message);
+                    
+                    // Show detailed results
+                    console.log('Bulk translation results:', data.results);
+                    
+                    // Reload products to show updated translations
+                    setTimeout(() => {
+                        loadProducts();
+                    }, 2000);
+                    
+                } else {
+                    showError('Bulk translation failed: ' + (data.error || 'Unknown error'));
+                    progressText.textContent = 'Bulk translation failed';
+                    progressDetails.textContent = data.error || 'Unknown error';
+                }
+                
+            } catch (error) {
+                console.error('Bulk translation error:', error);
+                showError('Bulk translation error: ' + error.message);
+                progressText.textContent = 'Bulk translation failed';
+                progressDetails.textContent = error.message;
+            } finally {
+                // Re-enable buttons
+                document.querySelectorAll('.btn').forEach(btn => btn.disabled = false);
             }
         }
         
