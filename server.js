@@ -592,6 +592,67 @@ app.post('/api/test-translate', async (req, res) => {
   }
 });
 
+// Endpoint to translate metafield content to English (updates original metafield)
+app.post('/api/translate-to-english', async (req, res) => {
+  try {
+    const { metafieldId, content, sourceLanguage } = req.body;
+    const shop = req.query.shop;
+    const accessToken = process.env.SHOPIFY_ACCESS_TOKEN;
+
+    if (!shop || !accessToken) {
+      return res.status(400).json({ error: 'Missing shop or access token' });
+    }
+
+    if (!metafieldId || !content) {
+      return res.status(400).json({ error: 'Missing metafieldId or content' });
+    }
+
+    console.log(`Translating metafield ${metafieldId} to English...`);
+    console.log('Source language:', sourceLanguage);
+    console.log('Original content:', JSON.stringify(content, null, 2));
+
+    // Translate the content to English
+    const englishContent = await translateJsonContent(content, sourceLanguage, 'en');
+    
+    console.log('English content:', JSON.stringify(englishContent, null, 2));
+
+    // Update the original metafield with English content
+    const updateData = {
+      metafield: {
+        value: JSON.stringify(englishContent)
+      }
+    };
+
+    console.log('Updating metafield with English content...');
+    
+    const response = await axios.put(`https://${shop}/admin/api/2023-10/metafields/${metafieldId}.json`, updateData, {
+      headers: {
+        'X-Shopify-Access-Token': accessToken,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    console.log('Metafield update response:', response.status);
+
+    if (response.status === 200) {
+      res.json({
+        success: true,
+        translatedContent: englishContent,
+        message: 'Metafield successfully updated to English content'
+      });
+    } else {
+      throw new Error(`Failed to update metafield: ${response.status}`);
+    }
+
+  } catch (error) {
+    console.error('Error translating to English:', error.response?.data || error.message);
+    res.status(500).json({ 
+      error: 'Failed to translate to English',
+      details: error.response?.data || error.message
+    });
+  }
+});
+
 // Translate API endpoint (actual translation)
 app.post('/api/translate', async (req, res) => {
   try {

@@ -436,9 +436,10 @@
                 <button class="btn btn-secondary" onclick="loadPreviousPage()" id="prev-page-btn" disabled>Previous</button>
                 <span id="page-info" class="page-info">Page 1 of 1</span>
                 <button class="btn btn-secondary" onclick="loadNextPage()" id="next-page-btn" disabled>Next</button>
-                <button class="btn" onclick="bulkTranslateCurrentPage()" id="bulk-translate-current-btn">Translate Current Page to French</button>
-                <button class="btn" onclick="bulkTranslateTest()" id="bulk-translate-test-btn" style="background-color: #f59e0b;">🧪 Test Bulk Translation (10 products)</button>
-                <button class="btn" onclick="bulkTranslateAllProducts()" id="bulk-translate-all-btn" style="background-color: #dc2626; font-weight: bold;">🚀 Translate ALL Products to French</button>
+                <button class="btn" onclick="translateToEnglish()" id="translate-to-english-btn" style="background-color: #3b82f6;">🇺🇸 Translate to English</button>
+                <button class="btn" onclick="bulkTranslateCurrentPage()" id="bulk-translate-current-btn">🌍 Fill French Field (Current Page)</button>
+                <button class="btn" onclick="bulkTranslateTest()" id="bulk-translate-test-btn" style="background-color: #f59e0b;">🧪 Test Fill French Field (10 products)</button>
+                <button class="btn" onclick="bulkTranslateAllProducts()" id="bulk-translate-all-btn" style="background-color: #dc2626; font-weight: bold;">🚀 Fill French Field (ALL Products)</button>
                 <button class="btn" onclick="stopBulkTranslation()" id="stop-bulk-translation" style="background-color: #ef4444; font-weight: bold; display: none;">⏹️ Stop Translation</button>
             </div>
         </div>
@@ -451,8 +452,9 @@
             <div id="progress-text" class="progress-text">0% Complete</div>
             <div id="progress-details" style="text-align: center; color: #6b7280; margin-top: 10px;"></div>
             <div class="progress-info" style="margin-top: 15px; padding: 10px; background: #f0f9ff; border-radius: 4px; border-left: 4px solid #0ea5e9;">
-                <p style="margin: 5px 0; font-size: 14px;"><strong>Translation Process:</strong> Original content → English → French field</p>
-                <p style="margin: 5px 0; font-size: 14px;"><strong>What's happening:</strong> The app translates original content to English first, then English to French, filling the French field in Shopify's interface.</p>
+                <p style="margin: 5px 0; font-size: 14px;"><strong>Two-Step Process:</strong></p>
+                <p style="margin: 5px 0; font-size: 14px;"><strong>Step 1:</strong> 🇺🇸 Translate to English (updates original metafield)</p>
+                <p style="margin: 5px 0; font-size: 14px;"><strong>Step 2:</strong> 🌍 Fill French Field (English → French, fills French field only)</p>
                 <p style="margin: 5px 0; font-size: 14px;"><strong>Note:</strong> You can stop the translation at any time using the "Stop Translation" button.</p>
             </div>
         </div>
@@ -1151,7 +1153,112 @@
             }
         }
         
-        async function bulkTranslateCurrentPage() {
+        // Function to translate current page products to English
+    async function translateToEnglish() {
+        const products = document.querySelectorAll('.product-card');
+        if (products.length === 0) {
+            alert('No products to translate. Please load products first.');
+            return;
+        }
+
+        const confirmTranslate = confirm(`Are you sure you want to translate ${products.length} products to English?\n\nThis will update the original metafield content to English.`);
+        if (!confirmTranslate) return;
+
+        // Disable buttons during translation
+        document.getElementById('translate-to-english-btn').disabled = true;
+        document.getElementById('bulk-translate-current-btn').disabled = true;
+        document.getElementById('bulk-translate-test-btn').disabled = true;
+        document.getElementById('bulk-translate-all-btn').disabled = true;
+
+        let successCount = 0;
+        let errorCount = 0;
+
+        for (let i = 0; i < products.length; i++) {
+            const product = products[i];
+            const metafieldId = product.dataset.metafieldId;
+            const productTitle = product.querySelector('.product-title').textContent;
+
+            if (!metafieldId) {
+                console.log(`Skipping product ${productTitle} - no metafield ID`);
+                continue;
+            }
+
+            try {
+                // Show progress
+                const progressText = `Translating to English: ${i + 1}/${products.length} - ${productTitle}`;
+                console.log(progressText);
+
+                // Get the original metafield content
+                const metafieldResponse = await fetch(`/api/metafield/${metafieldId}?shop=${shop}`);
+                const metafieldData = await metafieldResponse.json();
+
+                if (!metafieldData.success) {
+                    throw new Error(metafieldData.error || 'Failed to get metafield');
+                }
+
+                const originalContent = metafieldData.metafield.value;
+                let jsonContent;
+
+                try {
+                    jsonContent = JSON.parse(originalContent);
+                } catch (parseError) {
+                    console.log(`Skipping product ${productTitle} - invalid JSON`);
+                    continue;
+                }
+
+                // Detect source language and translate to English
+                const sourceLanguage = detectLanguage(jsonContent);
+                console.log(`Detected source language: ${sourceLanguage} for product ${productTitle}`);
+
+                // Translate to English
+                const response = await fetch('/api/translate-to-english', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        metafieldId: metafieldId,
+                        content: jsonContent,
+                        sourceLanguage: sourceLanguage
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    successCount++;
+                    console.log(`✅ Translated to English: ${productTitle}`);
+                    
+                    // Update the product display
+                    const metafieldPreview = product.querySelector('.metafield-preview');
+                    if (metafieldPreview) {
+                        metafieldPreview.textContent = getMetafieldPreview(result.translatedContent);
+                    }
+                } else {
+                    errorCount++;
+                    console.error(`❌ Failed to translate ${productTitle}:`, result.error);
+                }
+
+            } catch (error) {
+                errorCount++;
+                console.error(`❌ Error translating ${productTitle}:`, error.message);
+            }
+
+            // Small delay to avoid overwhelming the server
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+
+        // Re-enable buttons
+        document.getElementById('translate-to-english-btn').disabled = false;
+        document.getElementById('bulk-translate-current-btn').disabled = false;
+        document.getElementById('bulk-translate-test-btn').disabled = false;
+        document.getElementById('bulk-translate-all-btn').disabled = false;
+
+        // Show results
+        alert(`English Translation Complete!\n\n✅ Successfully translated: ${successCount} products\n❌ Failed: ${errorCount} products\n\nOriginal metafields have been updated to English content.`);
+    }
+
+    async function bulkTranslateCurrentPage() {
             if (!confirm(`Are you sure you want to translate all ${products.length} products on the current page?`)) {
                 return;
             }
