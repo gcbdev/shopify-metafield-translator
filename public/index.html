@@ -64,12 +64,14 @@
         .btn {
             background-color: #96bf48;
             color: white;
-            padding: 10px 20px;
+            padding: 8px 16px;
             border: none;
             border-radius: 4px;
             cursor: pointer;
             font-size: 14px;
-            margin-right: 10px;
+            margin-right: 0;
+            flex: 1;
+            max-width: 200px;
         }
         
         .btn:hover {
@@ -103,7 +105,7 @@
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
             transition: all 0.3s ease;
             display: flex;
-            flex-direction: row;
+            flex-direction: column;
             border-left: 4px solid #96bf48;
             min-height: 120px;
             margin: 0;
@@ -112,7 +114,6 @@
             z-index: 1;
             width: 100%;
             box-sizing: border-box;
-            align-items: flex-start;
         }
         
         .product-card:hover {
@@ -123,7 +124,7 @@
         
         .product-info {
             flex: 1;
-            margin-right: 20px;
+            margin-bottom: 15px;
         }
         
         .product-title {
@@ -152,10 +153,10 @@
         
         .product-actions {
             display: flex;
-            flex-direction: column;
-            gap: 8px;
-            min-width: 200px;
-            align-self: flex-start;
+            flex-direction: row;
+            gap: 10px;
+            margin-top: auto;
+            justify-content: flex-start;
         }
         
         .pagination {
