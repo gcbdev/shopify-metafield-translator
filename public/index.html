@@ -85,13 +85,15 @@
         }
         
         .products-list {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-            gap: 20px;
-            padding: 10px;
+            display: grid !important;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)) !important;
+            gap: 20px !important;
+            padding: 10px !important;
             min-height: 200px;
             opacity: 1;
             transition: opacity 0.3s ease;
+            width: 100%;
+            box-sizing: border-box;
         }
         
         .product-card {
@@ -108,6 +110,8 @@
             border: 1px solid #e5e7eb;
             position: relative;
             z-index: 1;
+            width: 100%;
+            box-sizing: border-box;
         }
         
         .product-card:hover {
@@ -249,6 +253,13 @@
             margin: 20px 0;
             min-height: 300px;
             transition: all 0.3s ease;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        
+        #products-container > * {
+            width: 100%;
+            box-sizing: border-box;
         }
         
         .progress-bar {
@@ -579,31 +590,28 @@
                 return;
             }
             
-            // Add a small delay to ensure smooth rendering
-            setTimeout(() => {
-                container.innerHTML = `
-                    <div class="products-list">
-                        ${products.map(product => `
-                            <div class="product-card">
-                                <div class="product-info">
-                                    <div class="product-title">${product.title}</div>
-                                    <div class="product-handle">${product.handle}</div>
-                                    <div class="metafield-preview">${getMetafieldPreview(product)}</div>
-                                </div>
-                                <div class="product-actions">
-                                    <button class="btn" onclick="testTranslateProduct(${product.id})">Test French Translation</button>
-                                    <button class="btn btn-secondary" onclick="translateProduct(${product.id})">Translate to French</button>
-                                </div>
+            container.innerHTML = `
+                <div class="products-list">
+                    ${products.map(product => `
+                        <div class="product-card">
+                            <div class="product-info">
+                                <div class="product-title">${product.title}</div>
+                                <div class="product-handle">${product.handle}</div>
+                                <div class="metafield-preview">${getMetafieldPreview(product)}</div>
                             </div>
-                        `).join('')}
-                    </div>
-                `;
-                
-                // Update product count and pagination
-                if (products.length > 0) {
-                    updateProductCount();
-                }
-            }, 50);
+                            <div class="product-actions">
+                                <button class="btn" onclick="testTranslateProduct(${product.id})">Test French Translation</button>
+                                <button class="btn btn-secondary" onclick="translateProduct(${product.id})">Translate to French</button>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+            
+            // Update product count and pagination
+            if (products.length > 0) {
+                updateProductCount();
+            }
         }
         
         
