@@ -436,10 +436,8 @@
                 <button class="btn btn-secondary" onclick="loadPreviousPage()" id="prev-page-btn" disabled>Previous</button>
                 <span id="page-info" class="page-info">Page 1 of 1</span>
                 <button class="btn btn-secondary" onclick="loadNextPage()" id="next-page-btn" disabled>Next</button>
-                <button class="btn" onclick="translateToEnglish()" id="translate-to-english-btn" style="background-color: #3b82f6;">🇺🇸 Translate to English</button>
-                <button class="btn" onclick="bulkTranslateCurrentPage()" id="bulk-translate-current-btn">🌍 Fill French Field (Current Page)</button>
-                <button class="btn" onclick="bulkTranslateTest()" id="bulk-translate-test-btn" style="background-color: #f59e0b;">🧪 Test Fill French Field (10 products)</button>
-                <button class="btn" onclick="bulkTranslateAllProducts()" id="bulk-translate-all-btn" style="background-color: #dc2626; font-weight: bold;">🚀 Fill French Field (ALL Products)</button>
+                <button class="btn" onclick="forceTranslateToEnglish()" id="force-translate-english-btn" style="background-color: #3b82f6; font-weight: bold;">🇺🇸 FORCE Translate Original to English</button>
+                <button class="btn" onclick="fillFrenchField()" id="fill-french-field-btn" style="background-color: #10b981; font-weight: bold;">🌍 Fill French Field (English → French)</button>
                 <button class="btn" onclick="stopBulkTranslation()" id="stop-bulk-translation" style="background-color: #ef4444; font-weight: bold; display: none;">⏹️ Stop Translation</button>
             </div>
         </div>
@@ -452,10 +450,10 @@
             <div id="progress-text" class="progress-text">0% Complete</div>
             <div id="progress-details" style="text-align: center; color: #6b7280; margin-top: 10px;"></div>
             <div class="progress-info" style="margin-top: 15px; padding: 10px; background: #f0f9ff; border-radius: 4px; border-left: 4px solid #0ea5e9;">
-                <p style="margin: 5px 0; font-size: 14px;"><strong>Two-Step Process:</strong></p>
-                <p style="margin: 5px 0; font-size: 14px;"><strong>Step 1:</strong> 🇺🇸 Translate to English (updates original metafield)</p>
-                <p style="margin: 5px 0; font-size: 14px;"><strong>Step 2:</strong> 🌍 Fill French Field (English → French, fills French field only)</p>
-                <p style="margin: 5px 0; font-size: 14px;"><strong>Note:</strong> You can stop the translation at any time using the "Stop Translation" button.</p>
+                <p style="margin: 5px 0; font-size: 14px;"><strong>Simple Two-Button Process:</strong></p>
+                <p style="margin: 5px 0; font-size: 14px;"><strong>Button 1:</strong> 🇺🇸 FORCE Translate Original to English (updates original metafield)</p>
+                <p style="margin: 5px 0; font-size: 14px;"><strong>Button 2:</strong> 🌍 Fill French Field (English → French, fills French localization field only)</p>
+                <p style="margin: 5px 0; font-size: 14px;"><strong>Important:</strong> Button 2 assumes content is already in English and fills French field without touching English content.</p>
             </div>
         </div>
         
@@ -1209,34 +1207,32 @@
         return 'en'; // Default to English
     }
 
-    // Function to translate current page products to English
-    async function translateToEnglish() {
+    // Function to FORCE translate original content to English (updates original metafield)
+    async function forceTranslateToEnglish() {
         const products = document.querySelectorAll('.product-card');
         if (products.length === 0) {
             alert('No products to translate. Please load products first.');
             return;
         }
 
-        const confirmTranslate = confirm(`Are you sure you want to translate ${products.length} products to English?\n\nThis will update the original metafield content to English.`);
+        const confirmTranslate = confirm(`FORCE TRANSLATE TO ENGLISH\n\nThis will translate ${products.length} products from their original language to English.\n\n⚠️ WARNING: This will UPDATE the original metafield content!\n\nAre you sure?`);
         if (!confirmTranslate) return;
 
         // Disable buttons during translation
-        document.getElementById('translate-to-english-btn').disabled = true;
-        document.getElementById('bulk-translate-current-btn').disabled = true;
-        document.getElementById('bulk-translate-test-btn').disabled = true;
-        document.getElementById('bulk-translate-all-btn').disabled = true;
+        document.getElementById('force-translate-english-btn').disabled = true;
+        document.getElementById('fill-french-field-btn').disabled = true;
 
         let successCount = 0;
         let errorCount = 0;
 
-        console.log(`Found ${products.length} products to process`);
+        console.log(`FORCE TRANSLATING ${products.length} products to English...`);
         
         for (let i = 0; i < products.length; i++) {
             const product = products[i];
             const metafieldId = product.dataset.metafieldId;
             const productTitle = product.querySelector('.product-title').textContent;
 
-            console.log(`Processing product ${i + 1}: ${productTitle}, metafieldId: ${metafieldId}`);
+            console.log(`FORCE translating product ${i + 1}: ${productTitle}`);
 
             if (!metafieldId) {
                 console.log(`Skipping product ${productTitle} - no metafield ID`);
@@ -1244,10 +1240,6 @@
             }
 
             try {
-                // Show progress
-                const progressText = `Translating to English: ${i + 1}/${products.length} - ${productTitle}`;
-                console.log(progressText);
-
                 // Get the original metafield content
                 const metafieldResponse = await fetch(`/api/metafield/${metafieldId}?shop=${shop}`);
                 const metafieldData = await metafieldResponse.json();
@@ -1257,23 +1249,20 @@
                 }
 
                 const originalContent = metafieldData.metafield.value;
-                console.log(`Original content for ${productTitle}:`, originalContent);
-                
                 let jsonContent;
 
                 try {
                     jsonContent = JSON.parse(originalContent);
-                    console.log(`Parsed JSON for ${productTitle}:`, jsonContent);
                 } catch (parseError) {
-                    console.log(`Skipping product ${productTitle} - invalid JSON:`, parseError.message);
+                    console.log(`Skipping product ${productTitle} - invalid JSON`);
                     continue;
                 }
 
                 // Detect source language and translate to English
                 const sourceLanguage = detectLanguage(jsonContent);
-                console.log(`Detected source language: ${sourceLanguage} for product ${productTitle}`);
+                console.log(`Detected source language: ${sourceLanguage} for ${productTitle}`);
 
-                // Translate to English
+                // FORCE translate to English (regardless of current language)
                 const response = await fetch('/api/translate-to-english', {
                     method: 'POST',
                     headers: {
@@ -1290,7 +1279,7 @@
 
                 if (result.success) {
                     successCount++;
-                    console.log(`✅ Translated to English: ${productTitle}`);
+                    console.log(`✅ FORCE translated to English: ${productTitle}`);
                     
                     // Update the product display
                     const metafieldPreview = product.querySelector('.metafield-preview');
@@ -1299,12 +1288,12 @@
                     }
                 } else {
                     errorCount++;
-                    console.error(`❌ Failed to translate ${productTitle}:`, result.error);
+                    console.error(`❌ Failed to FORCE translate ${productTitle}:`, result.error);
                 }
 
             } catch (error) {
                 errorCount++;
-                console.error(`❌ Error translating ${productTitle}:`, error.message);
+                console.error(`❌ Error FORCE translating ${productTitle}:`, error.message);
             }
 
             // Small delay to avoid overwhelming the server
@@ -1312,66 +1301,98 @@
         }
 
         // Re-enable buttons
-        document.getElementById('translate-to-english-btn').disabled = false;
-        document.getElementById('bulk-translate-current-btn').disabled = false;
-        document.getElementById('bulk-translate-test-btn').disabled = false;
-        document.getElementById('bulk-translate-all-btn').disabled = false;
+        document.getElementById('force-translate-english-btn').disabled = false;
+        document.getElementById('fill-french-field-btn').disabled = false;
 
         // Show results
-        alert(`English Translation Complete!\n\n✅ Successfully translated: ${successCount} products\n❌ Failed: ${errorCount} products\n\nOriginal metafields have been updated to English content.`);
+        alert(`FORCE ENGLISH TRANSLATION COMPLETE!\n\n✅ Successfully translated: ${successCount} products\n❌ Failed: ${errorCount} products\n\n⚠️ Original metafields have been updated to English content.`);
     }
 
-    async function bulkTranslateCurrentPage() {
-            if (!confirm(`Are you sure you want to translate all ${products.length} products on the current page?`)) {
-                return;
+    // Function to fill French field (assumes content is already in English)
+    async function fillFrenchField() {
+        const products = document.querySelectorAll('.product-card');
+        if (products.length === 0) {
+            alert('No products to translate. Please load products first.');
+            return;
+        }
+
+        const confirmTranslate = confirm(`FILL FRENCH FIELD\n\nThis will translate ${products.length} products from English to French and fill the French localization field.\n\n✅ English content will remain UNTOUCHED\n✅ Only French field will be filled\n\nAre you sure?`);
+        if (!confirmTranslate) return;
+
+        // Show progress container
+        const progressContainer = document.getElementById('progress-container');
+        progressContainer.style.display = 'block';
+        
+        // Disable buttons during translation
+        document.getElementById('force-translate-english-btn').disabled = true;
+        document.getElementById('fill-french-field-btn').disabled = true;
+        
+        let successCount = 0;
+        let errorCount = 0;
+        
+        console.log(`FILLING FRENCH FIELD for ${products.length} products...`);
+        
+        for (let i = 0; i < products.length; i++) {
+            const product = products[i];
+            const metafieldId = product.dataset.metafieldId;
+            const productTitle = product.querySelector('.product-title').textContent;
+            
+            console.log(`Filling French field for product ${i + 1}: ${productTitle}`);
+            
+            if (!metafieldId) {
+                console.log(`Skipping product ${productTitle} - no metafield ID`);
+                continue;
             }
-            
-            const progressContainer = document.getElementById('progress-container');
-            const progressFill = document.getElementById('progress-fill');
-            const progressText = document.getElementById('progress-text');
-            const progressDetails = document.getElementById('progress-details');
-            
-            progressContainer.style.display = 'block';
-            
-            let completed = 0;
-            let errors = 0;
-            
-            // Disable buttons during bulk operation
-            document.querySelectorAll('.btn').forEach(btn => btn.disabled = true);
             
             try {
-                // Translate each product on current page
-                for (const product of products) {
-                    try {
-                        await translateProductSilent(product.id);
-                        completed++;
-                        
-                        // Update progress
-                        const progress = Math.round((completed / products.length) * 100);
-                        progressFill.style.width = `${progress}%`;
-                        progressText.textContent = `${progress}% Complete`;
-                        progressDetails.textContent = `Translated ${completed} of ${products.length} products on current page (${errors} errors)`;
-                        
-                        // Small delay to prevent overwhelming the API
-                        await new Promise(resolve => setTimeout(resolve, 200));
-                        
-                    } catch (error) {
-                        console.error(`Error translating product ${product.id}:`, error);
-                        errors++;
-                    }
+                // Update progress
+                const progress = Math.round(((i + 1) / products.length) * 100);
+                document.getElementById('progress-fill').style.width = progress + '%';
+                document.getElementById('progress-text').textContent = progress + '% Complete';
+                document.getElementById('progress-details').textContent = `Filling French field: ${productTitle}`;
+                
+                // Use the existing endpoint that fills French field only
+                const response = await fetch(`/api/metafield/${metafieldId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        targetLanguage: 'fr',
+                        shop: shop
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    successCount++;
+                    console.log(`✅ French field filled: ${productTitle}`);
+                } else {
+                    errorCount++;
+                    console.error(`❌ Failed to fill French field for ${productTitle}:`, result.error);
                 }
                 
-                showSuccess(`Page translation completed! ${completed} products translated successfully. ${errors} errors occurred.`);
-                
             } catch (error) {
-                console.error('Page translation error:', error);
-                showError('Page translation failed: ' + error.message);
-            } finally {
-                // Re-enable buttons
-                document.querySelectorAll('.btn').forEach(btn => btn.disabled = false);
-                progressContainer.style.display = 'none';
+                errorCount++;
+                console.error(`❌ Error filling French field for ${productTitle}:`, error.message);
             }
+            
+            // Small delay to avoid overwhelming the server
+            await new Promise(resolve => setTimeout(resolve, 1000));
         }
+        
+        // Show final results
+        document.getElementById('progress-text').textContent = 'French Field Fill Complete!';
+        document.getElementById('progress-details').textContent = `✅ Success: ${successCount} | ❌ Failed: ${errorCount}`;
+        
+        // Re-enable buttons
+        document.getElementById('force-translate-english-btn').disabled = false;
+        document.getElementById('fill-french-field-btn').disabled = false;
+        
+        // Show completion message
+        alert(`FRENCH FIELD FILL COMPLETE!\n\n✅ Successfully filled French field: ${successCount} products\n❌ Failed: ${errorCount} products\n\n✅ English content remains UNTOUCHED\n✅ French localization field has been filled`);
+    }
         
         async function bulkTranslateAll() {
             if (!confirm(`Are you sure you want to translate ALL ${totalProducts} products? This will take a while and cannot be undone.`)) {
