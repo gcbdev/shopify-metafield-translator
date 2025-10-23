@@ -983,6 +983,10 @@ app.post('/api/bulk-translate-all', authenticateShopify, async (req, res) => {
             }]
           };
 
+          console.log(`Attempting GraphQL translation for product ${product.id}...`);
+          console.log('Metafield ID:', metafield.id);
+          console.log('Digest:', translatableContentDigest);
+
           try {
             const response = await axios.post(`https://${shop}/admin/api/2024-01/graphql.json`, {
               query: graphqlQuery,
@@ -994,38 +998,31 @@ app.post('/api/bulk-translate-all', authenticateShopify, async (req, res) => {
               }
             });
 
+            console.log('GraphQL response:', JSON.stringify(response.data, null, 2));
+
             if (response.data.errors) {
+              console.error('GraphQL errors:', response.data.errors);
               throw new Error(`GraphQL errors: ${JSON.stringify(response.data.errors)}`);
             }
 
             if (response.data.data?.translationsRegister?.userErrors?.length > 0) {
+              console.error('Translation user errors:', response.data.data.translationsRegister.userErrors);
               throw new Error(`Translation errors: ${JSON.stringify(response.data.data.translationsRegister.userErrors)}`);
             }
 
-            console.log('French translation registered successfully for product:', product.id);
+            if (response.data.data?.translationsRegister?.translations?.length > 0) {
+              console.log('French translation registered successfully for product:', product.id);
+              console.log('Registered translations:', response.data.data.translationsRegister.translations);
+            } else {
+              throw new Error('No translations were registered');
+            }
 
           } catch (graphqlError) {
-            console.error('GraphQL translation failed, trying fallback method:', graphqlError.message);
+            console.error('GraphQL translation failed:', graphqlError.message);
+            console.error('Full error:', graphqlError);
             
-            // Fallback: Create a French locale metafield
-            await axios.post(`https://${shop}/admin/api/2023-10/metafields.json`, {
-              metafield: {
-                namespace: "custom",
-                key: "specification",
-                value: JSON.stringify(translatedContent),
-                type: "json",
-                owner_id: product.id,
-                owner_resource: "product",
-                locale: "fr"
-              }
-            }, {
-              headers: {
-                'X-Shopify-Access-Token': accessToken,
-                'Content-Type': 'application/json'
-              }
-            });
-            
-            console.log('French translation created using fallback method for product:', product.id);
+            // Instead of fallback, throw error to prevent modifying original metafield
+            throw new Error(`Translation failed for product ${product.id}: ${graphqlError.message}`);
           }
 
           return { productId: product.id, status: 'success', title: product.title };
@@ -1185,6 +1182,10 @@ app.post('/api/bulk-translate-test', authenticateShopify, async (req, res) => {
           }]
         };
 
+        console.log(`Attempting GraphQL translation for product ${product.id}...`);
+        console.log('Metafield ID:', metafield.id);
+        console.log('Digest:', translatableContentDigest);
+
         try {
           const response = await axios.post(`https://${shop}/admin/api/2024-01/graphql.json`, {
             query: graphqlQuery,
@@ -1196,38 +1197,31 @@ app.post('/api/bulk-translate-test', authenticateShopify, async (req, res) => {
             }
           });
 
+          console.log('GraphQL response:', JSON.stringify(response.data, null, 2));
+
           if (response.data.errors) {
+            console.error('GraphQL errors:', response.data.errors);
             throw new Error(`GraphQL errors: ${JSON.stringify(response.data.errors)}`);
           }
 
           if (response.data.data?.translationsRegister?.userErrors?.length > 0) {
+            console.error('Translation user errors:', response.data.data.translationsRegister.userErrors);
             throw new Error(`Translation errors: ${JSON.stringify(response.data.data.translationsRegister.userErrors)}`);
           }
 
-          console.log('French translation registered successfully for product:', product.id);
+          if (response.data.data?.translationsRegister?.translations?.length > 0) {
+            console.log('French translation registered successfully for product:', product.id);
+            console.log('Registered translations:', response.data.data.translationsRegister.translations);
+          } else {
+            throw new Error('No translations were registered');
+          }
 
         } catch (graphqlError) {
-          console.error('GraphQL translation failed, trying fallback method:', graphqlError.message);
+          console.error('GraphQL translation failed:', graphqlError.message);
+          console.error('Full error:', graphqlError);
           
-          // Fallback: Create a French locale metafield
-          await axios.post(`https://${shop}/admin/api/2023-10/metafields.json`, {
-            metafield: {
-              namespace: "custom",
-              key: "specification",
-              value: JSON.stringify(translatedContent),
-              type: "json",
-              owner_id: product.id,
-              owner_resource: "product",
-              locale: "fr"
-            }
-          }, {
-            headers: {
-              'X-Shopify-Access-Token': accessToken,
-              'Content-Type': 'application/json'
-            }
-          });
-          
-          console.log('French translation created using fallback method for product:', product.id);
+          // Instead of fallback, throw error to prevent modifying original metafield
+          throw new Error(`Translation failed for product ${product.id}: ${graphqlError.message}`);
         }
 
         results.details.push({ productId: product.id, status: 'success', title: product.title });
