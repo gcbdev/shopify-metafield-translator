@@ -1352,6 +1352,8 @@
                     const response = await fetch(`/api/metafield/${metafieldId}/french?shop=${shop}`);
                     const data = await response.json();
                     
+                    console.log(`French content response for product ${productId}:`, data);
+                    
                     const frenchContentDiv = document.getElementById(`french-content-${productId}`);
                     if (frenchContentDiv) {
                         if (data.success && data.frenchContent) {
