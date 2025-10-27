@@ -465,6 +465,7 @@
                 <button class="btn btn-secondary" onclick="loadPreviousPage()" id="prev-page-btn" disabled>Previous</button>
                 <span id="page-info" class="page-info">Page 1 of 1</span>
                 <button class="btn btn-secondary" onclick="loadNextPage()" id="next-page-btn" disabled>Next</button>
+                <button class="btn" onclick="forceTranslateToEnglish()" id="force-english-btn" style="background-color: #3b82f6; font-weight: bold;">🇺🇸 Force to English</button>
                 <button class="btn" onclick="translateToFrench()" id="translate-to-french-btn" style="background-color: #10b981; font-weight: bold;">🌍 Translate Current Page to French</button>
                 <button class="btn btn-secondary" onclick="refreshProductsList()" id="refresh-list-btn" style="background-color: #6b7280; font-weight: bold;">🔄 Refresh List</button>
             </div>
@@ -1520,6 +1521,103 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
 
             // Show results
             alert(`TRANSLATION COMPLETE!\n\n✅ Successfully translated: ${successCount} products\n❌ Failed: ${errorCount} products\n\nClick "Refresh List" to see updated French content.`);
+        }
+
+        // Function to force translate products to English
+        async function forceTranslateToEnglish() {
+            const products = document.querySelectorAll('.product-card');
+            if (products.length === 0) {
+                alert('No products to translate. Please load products first.');
+                return;
+            }
+
+            const confirmTranslate = confirm(`FORCE TO ENGLISH\n\nThis will translate the current ${products.length} products to English.\n\n⚠️ This will UPDATE the original metafield content!\n\nAre you sure?`);
+            if (!confirmTranslate) return;
+
+            // Disable buttons during translation
+            document.getElementById('force-english-btn').disabled = true;
+            document.getElementById('translate-to-french-btn').disabled = true;
+            document.getElementById('refresh-list-btn').disabled = true;
+
+            let successCount = 0;
+            let errorCount = 0;
+
+            console.log(`Force translating ${products.length} products to English...`);
+            
+            for (let i = 0; i < products.length; i++) {
+                const product = products[i];
+                const metafieldId = product.dataset.metafieldId;
+                const productTitle = product.querySelector('.product-title').textContent;
+
+                console.log(`Force translating product ${i + 1}: ${productTitle}`);
+
+                if (!metafieldId) {
+                    console.log(`Skipping product ${productTitle} - no metafield ID`);
+                    continue;
+                }
+
+                try {
+                    // Get the metafield content
+                    const metafieldResponse = await fetch(`/api/metafield/${metafieldId}?shop=${shop}`);
+                    const metafieldData = await metafieldResponse.json();
+
+                    if (!metafieldData.success) {
+                        throw new Error(metafieldData.error || 'Failed to get metafield');
+                    }
+
+                    const originalContent = metafieldData.metafield.value;
+                    let jsonContent;
+
+                    try {
+                        jsonContent = JSON.parse(originalContent);
+                    } catch (parseError) {
+                        console.log(`Skipping product ${productTitle} - invalid JSON`);
+                        continue;
+                    }
+
+                    // Detect language and translate to English
+                    const sourceLanguage = detectLanguage(jsonContent);
+                    console.log(`Detected source language: ${sourceLanguage} for ${productTitle}`);
+
+                    // Force translate to English
+                    const translateResponse = await fetch(`/api/translate-to-english?shop=${shop}`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            metafieldId: metafieldId,
+                            content: jsonContent,
+                            sourceLanguage: sourceLanguage
+                        })
+                    });
+
+                    const result = await translateResponse.json();
+
+                    if (result.success) {
+                        successCount++;
+                        console.log(`✅ Force translated to English: ${productTitle}`);
+                    } else {
+                        errorCount++;
+                        console.error(`❌ Failed to force translate ${productTitle}:`, result.error);
+                    }
+
+                } catch (error) {
+                    errorCount++;
+                    console.error(`❌ Error force translating ${productTitle}:`, error.message);
+                }
+
+                // Small delay to avoid overwhelming the server
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+
+            // Re-enable buttons
+            document.getElementById('force-english-btn').disabled = false;
+            document.getElementById('translate-to-french-btn').disabled = false;
+            document.getElementById('refresh-list-btn').disabled = false;
+
+            // Show results
+            alert(`ENGLISH TRANSLATION COMPLETE!\n\n✅ Successfully translated: ${successCount} products\n❌ Failed: ${errorCount} products\n\nClick "Refresh List" to see updated English content.`);
         }
 
         // Function to refresh the products list
