@@ -633,27 +633,27 @@ app.get('/api/metafield/:id/french', async (req, res) => {
     console.log(`📦 Product ID: ${productId}`);
     console.log(`🏷️ Metafield namespace: ${metafield.namespace}, key: ${metafield.key}`);
 
-    // Try multiple approaches to get French translations
-    // Approach 1: Query metafield translations directly
-    const graphqlQuery = `
-      query GetMetafieldTranslations($metafieldId: ID!) {
-        metafield(id: $metafieldId) {
-          id
-          namespace
-          key
-          value
-          translations(locales: [fr]) {
-            locale
-            value
-          }
-        }
-      }
-    `;
-    
+    // FIRST: Try using the 2025-01 API which has better translation support
+    console.log('=== TRYING 2025-01 API FIRST ===');
     let graphqlResponse;
     try {
-      graphqlResponse = await axios.post(`https://${shop}/admin/api/2024-01/graphql.json`, {
-        query: graphqlQuery,
+      const graphqlQuery2025 = `
+        query GetMetafieldTranslations($metafieldId: ID!) {
+          metafield(id: $metafieldId) {
+            id
+            namespace
+            key
+            value
+            translations(locales: [fr]) {
+              locale
+              value
+            }
+          }
+        }
+      `;
+      
+      graphqlResponse = await axios.post(`https://${shop}/admin/api/2025-01/graphql.json`, {
+        query: graphqlQuery2025,
         variables: {
           metafieldId: `gid://shopify/Metafield/${id}`
         }
@@ -663,9 +663,41 @@ app.get('/api/metafield/:id/french', async (req, res) => {
           'Content-Type': 'application/json'
         }
       });
+      console.log('✅ 2025-01 API call succeeded');
     } catch (err) {
-      console.log('First GraphQL approach failed, trying alternative...');
-      graphqlResponse = null;
+      console.log('2025-01 API failed, trying 2024-01...', err.message);
+      try {
+        const graphqlQuery2024 = `
+          query GetMetafieldTranslations($metafieldId: ID!) {
+            metafield(id: $metafieldId) {
+              id
+              namespace
+              key
+              value
+              translations(locales: [fr]) {
+                locale
+                value
+              }
+            }
+          }
+        `;
+        
+        graphqlResponse = await axios.post(`https://${shop}/admin/api/2024-01/graphql.json`, {
+          query: graphqlQuery2024,
+          variables: {
+            metafieldId: `gid://shopify/Metafield/${id}`
+          }
+        }, {
+          headers: {
+            'X-Shopify-Access-Token': accessToken,
+            'Content-Type': 'application/json'
+          }
+        });
+        console.log('✅ 2024-01 API call succeeded');
+      } catch (err2) {
+        console.log('Both GraphQL approaches failed:', err2.message);
+        graphqlResponse = null;
+      }
     }
 
     if (graphqlResponse && graphqlResponse.data) {
@@ -704,23 +736,48 @@ app.get('/api/metafield/:id/french', async (req, res) => {
     `;
     
     try {
-      const productGraphqlResponse = await axios.post(`https://${shop}/admin/api/2024-01/graphql.json`, {
-        query: productGraphqlQuery,
-        variables: {
-          productId: `gid://shopify/Product/${productId}`
-        }
-      }, {
-        headers: {
-          'X-Shopify-Access-Token': accessToken,
-          'Content-Type': 'application/json'
-        }
-      });
+      let productGraphqlResponse;
+      try {
+        productGraphqlResponse = await axios.post(`https://${shop}/admin/api/2025-01/graphql.json`, {
+          query: productGraphqlQuery,
+          variables: {
+            productId: `gid://shopify/Product/${productId}`
+          }
+        }, {
+          headers: {
+            'X-Shopify-Access-Token': accessToken,
+            'Content-Type': 'application/json'
+          }
+        });
+      } catch (apiErr) {
+        console.log('2025-01 API failed for product translations, trying 2024-01...');
+        productGraphqlResponse = await axios.post(`https://${shop}/admin/api/2024-01/graphql.json`, {
+          query: productGraphqlQuery,
+          variables: {
+            productId: `gid://shopify/Product/${productId}`
+          }
+        }, {
+          headers: {
+            'X-Shopify-Access-Token': accessToken,
+            'Content-Type': 'application/json'
+          }
+        });
+      }
       
       console.log(`📊 Product translations response:`, JSON.stringify(productGraphqlResponse.data, null, 2));
       const translations = productGraphqlResponse.data.data?.translations || [];
       console.log(`🌍 Found ${translations.length} product translations`);
-      console.log(`All translation keys found:`, translations.map(t => t.key));
-      console.log(`Sample translation values:`, translations.map(t => t.value?.substring(0, 50) + '...'));
+      
+      if (translations.length > 0) {
+        console.log(`All translation keys found:`, translations.map(t => t.key));
+        console.log(`Sample translation values:`, translations.map(t => {
+          const value = t.value || '';
+          return value.substring ? value.substring(0, 100) : String(value).substring(0, 100);
+        }));
+      } else {
+        console.log(`❌ No translations returned from GraphQL API`);
+        console.log(`Full response:`, JSON.stringify(productGraphqlResponse.data, null, 2));
+      }
       
       // Look for the metafield translation by trying different key formats
       let metafieldTranslation = null;
