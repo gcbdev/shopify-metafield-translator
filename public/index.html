@@ -461,31 +461,21 @@
                     <span id="current-batch-info" class="batch-info"></span>
                 </div>
             </div>
-            <div class="pagination-controls">
+            <div class="pagination-controls" style="display: flex; gap: 10px; align-items: center;">
                 <button class="btn btn-secondary" onclick="loadPreviousPage()" id="prev-page-btn" disabled>Previous</button>
                 <span id="page-info" class="page-info">Page 1 of 1</span>
                 <button class="btn btn-secondary" onclick="loadNextPage()" id="next-page-btn" disabled>Next</button>
-                <button class="btn" onclick="forceTranslateToEnglish()" id="force-translate-english-btn" style="background-color: #3b82f6; font-weight: bold;">🇺🇸 FORCE Translate Original to English</button>
-                <button class="btn" onclick="fillFrenchField()" id="fill-french-field-btn" style="background-color: #10b981; font-weight: bold;">🌍 Fill French Field (English → French)</button>
-                <button class="btn" onclick="fillAllFrenchFields()" id="fill-all-french-fields-btn" style="background-color: #059669; font-weight: bold;">🌍 Fill ALL French Fields</button>
-                <button class="btn" onclick="testDebugEndpoint()" id="debug-btn" style="background-color: #8b5cf6; font-weight: bold;">🔍 Debug French Content</button>
-                <button class="btn" onclick="stopBulkTranslation()" id="stop-bulk-translation" style="background-color: #ef4444; font-weight: bold; display: none;">⏹️ Stop Translation</button>
+                <button class="btn" onclick="refreshAllProducts()" style="background-color: #059669; font-weight: bold; flex: 0;">🔄 Refresh/Scan All Products</button>
             </div>
         </div>
         
         <div id="progress-container" class="progress-container" style="display: none;">
-            <h3>🔄 Bulk Translation Progress</h3>
+            <h3>🔄 Scanning All Products</h3>
             <div class="progress-bar">
                 <div id="progress-fill" class="progress-fill" style="width: 0%"></div>
             </div>
             <div id="progress-text" class="progress-text">0% Complete</div>
             <div id="progress-details" style="text-align: center; color: #6b7280; margin-top: 10px;"></div>
-            <div class="progress-info" style="margin-top: 15px; padding: 10px; background: #f0f9ff; border-radius: 4px; border-left: 4px solid #0ea5e9;">
-                <p style="margin: 5px 0; font-size: 14px;"><strong>Simple Two-Button Process:</strong></p>
-                <p style="margin: 5px 0; font-size: 14px;"><strong>Button 1:</strong> 🇺🇸 FORCE Translate Original to English (updates original metafield)</p>
-                <p style="margin: 5px 0; font-size: 14px;"><strong>Button 2:</strong> 🌍 Fill French Field (English → French, fills French localization field only)</p>
-                <p style="margin: 5px 0; font-size: 14px;"><strong>Important:</strong> Button 2 assumes content is already in English and fills French field without touching English content.</p>
-            </div>
         </div>
         
         <div id="products-container">
@@ -676,6 +666,39 @@
             // This will be replaced by the actual products display
         }
         
+        async function refreshAllProducts() {
+            try {
+                console.log('Refreshing all products...');
+                
+                // Reset pagination
+                currentPage = 1;
+                nextPageInfo = null;
+                previousPageInfo = null;
+                pageHistory = [];
+                currentPageIndex = 0;
+                totalProducts = 0;
+                
+                // Show progress
+                document.getElementById('progress-container').style.display = 'block';
+                document.getElementById('progress-text').textContent = 'Scanning all products...';
+                
+                // Rescan product count
+                await scanProductCount();
+                
+                // Load first page of products
+                await loadProducts();
+                
+                // Hide progress
+                document.getElementById('progress-container').style.display = 'none';
+                
+                showSuccess('Products refreshed successfully!');
+            } catch (error) {
+                console.error('Error refreshing products:', error);
+                showError('Error refreshing products: ' + error.message);
+                document.getElementById('progress-container').style.display = 'none';
+            }
+        }
+        
         function displayProducts() {
             const container = document.getElementById('products-container');
             
@@ -700,17 +723,13 @@
                                 <div class="content-section">
                                     <h4>Original Content:</h4>
                                     <div class="metafield-preview original-content">${getMetafieldPreview(product)}</div>
-                        </div>
+                                </div>
                                 <div class="content-section">
-                                    <h4>French Content:</h4>
+                                    <h4>Translated to French:</h4>
                                     <div class="metafield-preview french-content" id="french-content-${product.id}">Loading French content...</div>
                                 </div>
                             </div>
                             </div>
-                            <div class="product-actions">
-                            <button class="btn" onclick="viewOriginalContent(${product.id})">View Original Content</button>
-                            <button class="btn btn-secondary" onclick="viewFrenchContent(${product.id})">View French Content</button>
-                        </div>
                 </div>
             `;
                     }).join('')}
