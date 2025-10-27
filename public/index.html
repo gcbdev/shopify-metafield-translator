@@ -1448,9 +1448,13 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
             document.getElementById('progress-details').textContent = 'Starting translation...';
 
             // Disable buttons during translation
-            document.getElementById('translate-to-french-btn').disabled = true;
-            document.getElementById('refresh-list-btn').disabled = true;
-            document.getElementById('force-english-btn').disabled = true;
+            const forceEnglishBtn = document.getElementById('force-english-btn');
+            const translateBtn = document.getElementById('translate-to-french-btn');
+            const refreshBtn = document.getElementById('refresh-list-btn');
+            
+            if (forceEnglishBtn) forceEnglishBtn.disabled = true;
+            if (translateBtn) translateBtn.disabled = true;
+            if (refreshBtn) refreshBtn.disabled = true;
 
             let successCount = 0;
             let errorCount = 0;
@@ -1531,13 +1535,14 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
             document.getElementById('progress-details').textContent = `✅ ${successCount} successful | ❌ ${errorCount} failed`;
 
             // Re-enable buttons
-            document.getElementById('translate-to-french-btn').disabled = false;
-            document.getElementById('refresh-list-btn').disabled = false;
-            document.getElementById('force-english-btn').disabled = false;
+            if (forceEnglishBtn) forceEnglishBtn.disabled = false;
+            if (translateBtn) translateBtn.disabled = false;
+            if (refreshBtn) refreshBtn.disabled = false;
 
             // Hide progress after 3 seconds
             setTimeout(() => {
-                document.getElementById('progress-container').style.display = 'none';
+                const progressContainer = document.getElementById('progress-container');
+                if (progressContainer) progressContainer.style.display = 'none';
             }, 3000);
 
             // Show results
@@ -1563,9 +1568,13 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
             document.getElementById('progress-details').textContent = 'Starting English translation...';
 
             // Disable buttons during translation
-            document.getElementById('force-english-btn').disabled = true;
-            document.getElementById('translate-to-french-btn').disabled = true;
-            document.getElementById('refresh-list-btn').disabled = true;
+            const forceEnglishBtn = document.getElementById('force-english-btn');
+            const translateBtn = document.getElementById('translate-to-french-btn');
+            const refreshBtn = document.getElementById('refresh-list-btn');
+            
+            if (forceEnglishBtn) forceEnglishBtn.disabled = true;
+            if (translateBtn) translateBtn.disabled = true;
+            if (refreshBtn) refreshBtn.disabled = true;
 
             let successCount = 0;
             let errorCount = 0;
@@ -1651,13 +1660,14 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
             document.getElementById('progress-details').textContent = `✅ ${successCount} successful | ❌ ${errorCount} failed`;
 
             // Re-enable buttons
-            document.getElementById('force-english-btn').disabled = false;
-            document.getElementById('translate-to-french-btn').disabled = false;
-            document.getElementById('refresh-list-btn').disabled = false;
+            if (forceEnglishBtn) forceEnglishBtn.disabled = false;
+            if (translateBtn) translateBtn.disabled = false;
+            if (refreshBtn) refreshBtn.disabled = false;
 
             // Hide progress after 3 seconds
             setTimeout(() => {
-                document.getElementById('progress-container').style.display = 'none';
+                const progressContainer = document.getElementById('progress-container');
+                if (progressContainer) progressContainer.style.display = 'none';
             }, 3000);
 
             // Show results
