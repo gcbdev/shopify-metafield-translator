@@ -573,7 +573,7 @@ app.get('/api/metafield/:id/french', async (req, res) => {
           namespace
           key
           value
-          translations(locales: [FR]) {
+          translations(locales: [fr]) {
             locale
             value
           }
@@ -603,7 +603,7 @@ app.get('/api/metafield/:id/french', async (req, res) => {
       const translations = metafieldData.translations || [];
       console.log(`🌍 Found ${translations.length} translations:`, translations);
       
-      const frenchTranslation = translations.find(t => t.locale === 'FR');
+      const frenchTranslation = translations.find(t => t.locale === 'fr');
       
       if (frenchTranslation) {
         console.log(`✅ Found French translation:`, frenchTranslation.value.substring(0, 100) + '...');
@@ -628,7 +628,7 @@ app.get('/api/metafield/:id/french', async (req, res) => {
                 namespace
                 key
                 value
-                translations(locales: [FR]) {
+                translations(locales: [fr]) {
                   locale
                   value
                 }
@@ -665,7 +665,7 @@ app.get('/api/metafield/:id/french', async (req, res) => {
         console.log(`✅ Found specification metafield via product GraphQL`);
         console.log(`🌍 Translations:`, metafield.translations);
         
-        const frenchTranslation = metafield.translations.find(t => t.locale === 'FR');
+        const frenchTranslation = metafield.translations.find(t => t.locale === 'fr');
         if (frenchTranslation) {
           console.log(`✅ Found French translation via product GraphQL:`, frenchTranslation.value.substring(0, 100) + '...');
           res.json({
@@ -732,7 +732,7 @@ app.get('/api/metafield/:id/french', async (req, res) => {
                 namespace
                 key
                 value
-                translations(locales: [FR]) {
+                translations(locales: [fr]) {
                   locale
                   value
                 }
@@ -757,11 +757,11 @@ app.get('/api/metafield/:id/french', async (req, res) => {
 
     console.log(`📊 Alternative GraphQL response:`, JSON.stringify(alternativeResponse.data, null, 2));
 
-    const metafieldEdges = alternativeResponse.data.data?.product?.metafields?.edges || [];
-    console.log(`🔍 Found ${metafieldEdges.length} metafields via GraphQL`);
+    const alternativeMetafieldEdges = alternativeResponse.data.data?.product?.metafields?.edges || [];
+    console.log(`🔍 Found ${alternativeMetafieldEdges.length} metafields via GraphQL`);
 
     // Look for the specification metafield with French translation
-    for (const edge of metafieldEdges) {
+    for (const edge of alternativeMetafieldEdges) {
       const metafield = edge.node;
       console.log(`🔍 Checking metafield: ${metafield.namespace}.${metafield.key}`);
       
@@ -769,7 +769,7 @@ app.get('/api/metafield/:id/french', async (req, res) => {
         console.log(`✅ Found specification metafield via GraphQL`);
         console.log(`🌍 Translations:`, metafield.translations);
         
-        const frenchTranslation = metafield.translations.find(t => t.locale === 'FR');
+        const frenchTranslation = metafield.translations.find(t => t.locale === 'fr');
         if (frenchTranslation) {
           console.log(`✅ Found French translation via alternative GraphQL:`, frenchTranslation.value.substring(0, 100) + '...');
           res.json({
@@ -829,7 +829,7 @@ app.get('/api/debug-french/:metafieldId', async (req, res) => {
           namespace
           key
           value
-          translations(locales: [FR]) {
+          translations(locales: [fr]) {
             locale
             value
           }
@@ -1080,8 +1080,13 @@ app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
 
     console.log('Creating French translation for metafield:', id);
     console.log('Product ID:', productId);
-    console.log('Translated content preview:', JSON.stringify(translatedContent).substring(0, 200) + '...');
+    console.log('Original content preview:', JSON.stringify(translatedContent).substring(0, 200) + '...');
     console.log('Metafield GraphQL ID:', `gid://shopify/Metafield/${id}`);
+    
+    // Translate content from English to French
+    console.log('Translating content to French...');
+    const frenchContent = await translateJsonContent(translatedContent, 'en', 'fr');
+    console.log('French content preview:', JSON.stringify(frenchContent).substring(0, 200) + '...');
     
     // Check API token permissions
     try {
@@ -1130,13 +1135,13 @@ app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
     
     console.log('Original metafield value:', originalMetafieldValue);
     console.log('Generated digest from original:', translatableContentDigest);
-    console.log('French content to fill:', JSON.stringify(translatedContent));
+    console.log('French content to fill:', JSON.stringify(frenchContent).substring(0, 200) + '...');
 
     const variables = {
       id: `gid://shopify/Metafield/${id}`,
       translations: [{
         key: "value",
-        value: JSON.stringify(translatedContent),
+        value: JSON.stringify(frenchContent),
         locale: "fr",
         translatableContentDigest: translatableContentDigest
       }]
