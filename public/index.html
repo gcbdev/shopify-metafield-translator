@@ -696,12 +696,8 @@
                             <div class="product-handle">${product.handle}</div>
                             <div class="content-sections">
                                 <div class="content-section">
-                                    <h4>Original Content:</h4>
+                                    <h4>Specification Content:</h4>
                                     <div class="metafield-preview original-content">${getMetafieldPreview(product)}</div>
-                        </div>
-                                <div class="content-section">
-                                    <h4>French Content:</h4>
-                                    <div class="metafield-preview french-content" id="french-content-${product.id}">Loading French content...</div>
                                 </div>
                             </div>
                             </div>
@@ -1444,9 +1440,17 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
             const confirmTranslate = confirm(`TRANSLATE TO FRENCH\n\nThis will translate the current ${products.length} products from English to French and fill the French localization field.\n\n✅ French field will be filled\n✅ English content will remain UNTOUCHED\n\nAre you sure?`);
             if (!confirmTranslate) return;
 
+            // Show progress container
+            const progressContainer = document.getElementById('progress-container');
+            progressContainer.style.display = 'block';
+            document.getElementById('progress-fill').style.width = '0%';
+            document.getElementById('progress-text').textContent = '0% Complete';
+            document.getElementById('progress-details').textContent = 'Starting translation...';
+
             // Disable buttons during translation
             document.getElementById('translate-to-french-btn').disabled = true;
             document.getElementById('refresh-list-btn').disabled = true;
+            document.getElementById('force-english-btn').disabled = true;
 
             let successCount = 0;
             let errorCount = 0;
@@ -1458,7 +1462,13 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
                 const metafieldId = product.dataset.metafieldId;
                 const productTitle = product.querySelector('.product-title').textContent;
 
-                console.log(`Translating product ${i + 1}: ${productTitle}`);
+                // Update progress bar
+                const progress = Math.round(((i + 1) / products.length) * 100);
+                document.getElementById('progress-fill').style.width = progress + '%';
+                document.getElementById('progress-text').textContent = `${progress}% Complete`;
+                document.getElementById('progress-details').textContent = `Translating: ${productTitle}`;
+
+                console.log(`Translating product ${i + 1}/${products.length}: ${productTitle}`);
 
                 if (!metafieldId) {
                     console.log(`Skipping product ${productTitle} - no metafield ID`);
@@ -1515,12 +1525,23 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
                 await new Promise(resolve => setTimeout(resolve, 500));
             }
 
+            // Update progress bar to 100%
+            document.getElementById('progress-fill').style.width = '100%';
+            document.getElementById('progress-text').textContent = 'Translation Complete!';
+            document.getElementById('progress-details').textContent = `✅ ${successCount} successful | ❌ ${errorCount} failed`;
+
             // Re-enable buttons
             document.getElementById('translate-to-french-btn').disabled = false;
             document.getElementById('refresh-list-btn').disabled = false;
+            document.getElementById('force-english-btn').disabled = false;
+
+            // Hide progress after 3 seconds
+            setTimeout(() => {
+                document.getElementById('progress-container').style.display = 'none';
+            }, 3000);
 
             // Show results
-            alert(`TRANSLATION COMPLETE!\n\n✅ Successfully translated: ${successCount} products\n❌ Failed: ${errorCount} products\n\nClick "Refresh List" to see updated French content.`);
+            alert(`TRANSLATION COMPLETE!\n\n✅ Successfully translated: ${successCount} products\n❌ Failed: ${errorCount} products\n\nClick "Refresh List" to see updated products.`);
         }
 
         // Function to force translate products to English
@@ -1533,6 +1554,13 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
 
             const confirmTranslate = confirm(`FORCE TO ENGLISH\n\nThis will translate the current ${products.length} products to English.\n\n⚠️ This will UPDATE the original metafield content!\n\nAre you sure?`);
             if (!confirmTranslate) return;
+
+            // Show progress container
+            const progressContainer = document.getElementById('progress-container');
+            progressContainer.style.display = 'block';
+            document.getElementById('progress-fill').style.width = '0%';
+            document.getElementById('progress-text').textContent = '0% Complete';
+            document.getElementById('progress-details').textContent = 'Starting English translation...';
 
             // Disable buttons during translation
             document.getElementById('force-english-btn').disabled = true;
@@ -1549,7 +1577,13 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
                 const metafieldId = product.dataset.metafieldId;
                 const productTitle = product.querySelector('.product-title').textContent;
 
-                console.log(`Force translating product ${i + 1}: ${productTitle}`);
+                // Update progress bar
+                const progress = Math.round(((i + 1) / products.length) * 100);
+                document.getElementById('progress-fill').style.width = progress + '%';
+                document.getElementById('progress-text').textContent = `${progress}% Complete`;
+                document.getElementById('progress-details').textContent = `Force translating to English: ${productTitle}`;
+
+                console.log(`Force translating product ${i + 1}/${products.length}: ${productTitle}`);
 
                 if (!metafieldId) {
                     console.log(`Skipping product ${productTitle} - no metafield ID`);
@@ -1611,10 +1645,20 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
                 await new Promise(resolve => setTimeout(resolve, 500));
             }
 
+            // Update progress bar to 100%
+            document.getElementById('progress-fill').style.width = '100%';
+            document.getElementById('progress-text').textContent = 'English Translation Complete!';
+            document.getElementById('progress-details').textContent = `✅ ${successCount} successful | ❌ ${errorCount} failed`;
+
             // Re-enable buttons
             document.getElementById('force-english-btn').disabled = false;
             document.getElementById('translate-to-french-btn').disabled = false;
             document.getElementById('refresh-list-btn').disabled = false;
+
+            // Hide progress after 3 seconds
+            setTimeout(() => {
+                document.getElementById('progress-container').style.display = 'none';
+            }, 3000);
 
             // Show results
             alert(`ENGLISH TRANSLATION COMPLETE!\n\n✅ Successfully translated: ${successCount} products\n❌ Failed: ${errorCount} products\n\nClick "Refresh List" to see updated English content.`);
