@@ -719,31 +719,55 @@ app.get('/api/metafield/:id/french', async (req, res) => {
       console.log(`📊 Product translations response:`, JSON.stringify(productGraphqlResponse.data, null, 2));
       const translations = productGraphqlResponse.data.data?.translations || [];
       console.log(`🌍 Found ${translations.length} product translations`);
+      console.log(`All translation keys found:`, translations.map(t => t.key));
+      console.log(`Sample translation values:`, translations.map(t => t.value?.substring(0, 50) + '...'));
       
-      // Look for the metafield translation
-      // The key format for metafield translations is usually the field path
-      let metafieldTranslation = translations.find(t => 
-        t.key.includes('metafield') || 
-        t.key.includes('specification') ||
-        t.key === 'value' ||
-        t.key.includes(`${metafield.namespace}.${metafield.key}`)
-      );
+      // Look for the metafield translation by trying different key formats
+      let metafieldTranslation = null;
       
-      if (!metafieldTranslation && translations.length > 0) {
-        // If no specific match, try to find any JSON translation
-        metafieldTranslation = translations.find(t => t.value && t.value.startsWith('{'));
+      // Try exact key matches first
+      const possibleKeys = [
+        `metafields.${metafield.namespace}.${metafield.key}`,
+        `${metafield.namespace}.${metafield.key}`,
+        'value',
+        metafield.key,
+        `custom.specification`
+      ];
+      
+      console.log(`Looking for translation with these possible keys:`, possibleKeys);
+      
+      for (const searchKey of possibleKeys) {
+        metafieldTranslation = translations.find(t => 
+          t.key && (t.key === searchKey || t.key.includes(searchKey))
+        );
         if (metafieldTranslation) {
-          console.log(`Using translation with key: ${metafieldTranslation.key}`);
+          console.log(`✅ Found translation with key: ${metafieldTranslation.key}`);
+          break;
+        }
+      }
+      
+      // If still not found, look for any JSON value (metafield content is typically JSON)
+      if (!metafieldTranslation && translations.length > 0) {
+        for (const t of translations) {
+          if (t.value && (t.value.trim().startsWith('{') || t.value.trim().startsWith('['))) {
+            metafieldTranslation = t;
+            console.log(`Using translation with key: ${metafieldTranslation.key} (JSON content detected)`);
+            break;
+          }
         }
       }
       
       if (metafieldTranslation) {
         console.log(`✅ Found French translation via product query`);
+        console.log(`Translation key: ${metafieldTranslation.key}`);
+        console.log(`Translation value length: ${metafieldTranslation.value.length}`);
         res.json({
           success: true,
           frenchContent: metafieldTranslation.value
         });
         return;
+      } else {
+        console.log(`❌ No matching translation found in ${translations.length} translations`);
       }
     } catch (err) {
       console.log('Product-level translation query failed:', err.message);
