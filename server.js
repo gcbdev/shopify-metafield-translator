@@ -191,12 +191,13 @@ app.get('/api/metafield/:id/french', async (req, res) => {
     });
 
       const metafieldData = graphqlResponse.data.data?.metafield;
-      if (metafieldData && metafieldData.translations) {
+      if (metafieldData && metafieldData.translations && metafieldData.translations.length > 0) {
         const frenchTranslation = metafieldData.translations.find(t => t.locale === 'FR');
-        if (frenchTranslation) {
+        if (frenchTranslation && frenchTranslation.value) {
           console.log(`✅ Found French translation via GraphQL`);
+          // Return the French content, which is already a JSON string
           return res.json({
-      success: true,
+            success: true,
             frenchContent: frenchTranslation.value
           });
         }

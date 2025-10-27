@@ -309,12 +309,12 @@
     <div class="container">
         <div class="header">
             <h1>🌍 Translation App</h1>
-            <p>Clean, simple translation tool for Shopify products</p>
+            <p>Translate product specifications to French</p>
         </div>
 
         <div class="controls">
-            <button class="btn" onclick="loadProducts()">📦 Load Products</button>
             <button class="btn btn-success" onclick="translateAllToFrench()">🌍 Translate All to French</button>
+            <button class="btn" onclick="loadProducts()">🧪 Test Translate</button>
             <button class="btn btn-danger" onclick="stopTranslation()" id="stop-btn" style="display: none;">⏹️ Stop Translation</button>
         </div>
 
@@ -329,13 +329,13 @@
         <div class="products-container">
             <div class="products-header">
                 <h2>Products</h2>
-                <p id="products-info">Click "Load Products" to start</p>
+                <p id="products-info">Click "Test Translate" to start</p>
             </div>
             
             <div class="products-list" id="products-list">
                 <div class="no-products">
                     <h3>No products loaded</h3>
-                    <p>Click "Load Products" to fetch products with specification metafields</p>
+                    <p>Click "Test Translate" to fetch products with specification metafields</p>
                 </div>
             </div>
 
@@ -419,20 +419,20 @@
                                 </div>
                             </div>
                             
-                            <div class="content-section">
-                                <h4>French Content</h4>
-                                <div class="metafield-preview french-content" id="french-${product.id}">
-                                    Loading French content...
-                                </div>
+                        <div class="content-section">
+                            <h4>French Content</h4>
+                            <div class="metafield-preview french-content" id="french-${product.id}">
+                                Loading...
                             </div>
                         </div>
-                        
-                        <div class="product-actions">
-                            ${metafield ? `
-                                <button class="btn" onclick="translateToFrench('${metafieldId}', '${product.id}')">
-                                    🌍 Translate to French
-                                </button>
-                            ` : ''}
+                    </div>
+                    
+                    <div class="product-actions">
+                        ${metafield ? `
+                            <button class="btn" onclick="translateToFrench('${metafieldId}', '${product.id}')">
+                                🧪 Test Translate
+                            </button>
+                        ` : ''}
                         </div>
                     </div>
                 `;
@@ -463,9 +463,7 @@
                 if (!metafieldId) {
                     const frenchDiv = document.getElementById(`french-${productId}`);
                     if (frenchDiv) {
-                        frenchDiv.textContent = 'No specification metafield';
-                        frenchDiv.style.color = '#9ca3af';
-                        frenchDiv.style.fontStyle = 'italic';
+                        frenchDiv.textContent = '';
                     }
                     continue;
                 }
@@ -478,23 +476,24 @@
                     if (frenchDiv) {
                         if (data.success && data.frenchContent) {
                             try {
-                                const frenchJson = JSON.parse(data.frenchContent);
+                                const frenchJson = typeof data.frenchContent === 'string' ? JSON.parse(data.frenchContent) : data.frenchContent;
                                 frenchDiv.textContent = JSON.stringify(frenchJson, null, 2).substring(0, 200) + '...';
                             } catch (e) {
-                                frenchDiv.textContent = data.frenchContent.substring(0, 200) + '...';
+                                // If parsing fails, it might already be a string
+                                const content = typeof data.frenchContent === 'string' ? data.frenchContent : JSON.stringify(data.frenchContent);
+                                frenchDiv.textContent = content.substring(0, 200) + '...';
                             }
                         } else {
-                            frenchDiv.textContent = 'No French translation available';
-                            frenchDiv.style.color = '#9ca3af';
-                            frenchDiv.style.fontStyle = 'italic';
+                            // Leave blank if no French translation
+                            frenchDiv.textContent = '';
                         }
                     }
                 } catch (error) {
                     console.error(`Error loading French content for product ${productId}:`, error);
                     const frenchDiv = document.getElementById(`french-${productId}`);
                     if (frenchDiv) {
-                        frenchDiv.textContent = 'Error loading French content';
-                        frenchDiv.style.color = '#ef4444';
+                        // Leave blank on error
+                        frenchDiv.textContent = '';
                     }
                 }
             }
