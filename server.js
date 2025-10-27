@@ -161,7 +161,7 @@ app.get('/api/metafield/:id/french', async (req, res) => {
     const originalMetafield = metafieldResponse.data.metafield;
     const productId = originalMetafield.owner_id;
 
-    // Try to get French translation using GraphQL
+    // Try to get French translation using GraphQL with more detailed query
     const graphqlQuery = `
       query GetMetafieldTranslations($id: ID!) {
         metafield(id: $id) {
@@ -169,8 +169,9 @@ app.get('/api/metafield/:id/french', async (req, res) => {
           namespace
           key
           value
-          translations(locales: [FR]) {
+          translations(keys: ["value"], locales: [FR]) {
             locale
+            key
             value
           }
         }
@@ -190,12 +191,20 @@ app.get('/api/metafield/:id/french', async (req, res) => {
       }
     });
 
+      console.log(`GraphQL Response:`, JSON.stringify(graphqlResponse.data, null, 2));
+
       const metafieldData = graphqlResponse.data.data?.metafield;
       if (metafieldData && metafieldData.translations && metafieldData.translations.length > 0) {
-        const frenchTranslation = metafieldData.translations.find(t => t.locale === 'FR');
+        console.log(`Found translations:`, metafieldData.translations);
+        
+        // Look for French translation for the 'value' key
+        const frenchTranslation = metafieldData.translations.find(t => t.locale === 'FR' && t.key === 'value');
+        
         if (frenchTranslation && frenchTranslation.value) {
           console.log(`✅ Found French translation via GraphQL`);
-          // Return the French content, which is already a JSON string
+          console.log(`French content:`, frenchTranslation.value);
+          
+          // Return the French content
           return res.json({
             success: true,
             frenchContent: frenchTranslation.value
@@ -228,18 +237,19 @@ app.get('/api/metafield/:id/french', async (req, res) => {
       console.log(`❌ REST API approach failed:`, restError.response?.data || restError.message);
     }
 
-    console.log(`❌ No French translation found for metafield ${id}`);
+    console.log(`❌ No French translation found for metafield ${id} - returning blank`);
+    // Return success: true with empty content for blank display
     res.json({
-      success: false,
-      error: 'No French translation found'
+      success: true,
+      frenchContent: ''
     });
 
     } catch (error) {
     console.error('❌ Error getting French content:', error.response?.data || error.message);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to get French content',
-      details: error.response?.data || error.message
+    // Return success with empty content on error for blank display
+    res.json({
+      success: true,
+      frenchContent: ''
     });
   }
 });
