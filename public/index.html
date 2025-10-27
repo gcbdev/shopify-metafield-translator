@@ -1356,12 +1356,17 @@
                             try {
                                 const frenchJson = JSON.parse(data.frenchContent);
                                 frenchContentDiv.textContent = JSON.stringify(frenchJson, null, 2).substring(0, 200) + '...';
+                                frenchContentDiv.style.color = '#10b981';
+                                frenchContentDiv.style.fontStyle = 'normal';
                             } catch (e) {
                                 frenchContentDiv.textContent = data.frenchContent.substring(0, 200) + '...';
+                                frenchContentDiv.style.color = '#10b981';
+                                frenchContentDiv.style.fontStyle = 'normal';
                             }
                         } else {
-                            frenchContentDiv.textContent = 'No French translation available';
-                            frenchContentDiv.style.color = '#9ca3af';
+                            // No French translation yet - show a helpful message
+                            frenchContentDiv.textContent = 'Translation not created yet. Click "Translate to French" to create it.';
+                            frenchContentDiv.style.color = '#f59e0b';
                             frenchContentDiv.style.fontStyle = 'italic';
                         }
                     }
