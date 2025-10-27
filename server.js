@@ -358,12 +358,81 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
     
     // Handle rate limiting specifically
     if (error.response?.status === 429) {
-      res.status(429).json({ 
-        error: 'Rate limit exceeded',
-        details: 'Shopify API rate limit reached. Please wait before making more requests.',
-        shop: req.shop,
-        retryAfter: error.response.headers['retry-after'] || 60
-      });
+      const retryAfter = parseInt(error.response.headers['retry-after']) || 2;
+      console.log(`⏱️ Rate limit exceeded. Waiting ${retryAfter} seconds...`);
+      
+      // Wait and retry once
+      await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+      
+      try {
+        const retryResponse = await axios.get(`https://${shop}/admin/api/2023-10/products.json`, {
+          headers: {
+            'X-Shopify-Access-Token': accessToken,
+            'Content-Type': 'application/json'
+          },
+          params: {
+            limit: safeLimit,
+            fields: 'id,title,handle',
+            page_info: req.query.page_info
+          }
+        });
+        
+        // Process the retry response...
+        const retryData = retryResponse.data;
+        const retryProducts = retryData.products;
+        
+        if (retryProducts.length > 0) {
+          // Continue with the existing logic using retryData
+          const productsWithSpecs = showAllProducts 
+            ? retryProducts.map(product => ({ id: product.id, title: product.title, handle: product.handle, metafields: [] }))
+            : await Promise.all(retryProducts.map(async (product) => {
+              try {
+                const metafieldResponse = await axios.get(`https://${shop}/admin/api/2023-10/products/${product.id}/metafields.json`, {
+                  headers: { 'X-Shopify-Access-Token': accessToken, 'Content-Type': 'application/json' },
+                  params: { namespace: 'custom', key: 'specification' }
+                });
+                if (metafieldResponse.data.metafields && metafieldResponse.data.metafields.length > 0) {
+                  return { id: product.id, title: product.title, handle: product.handle, metafields: metafieldResponse.data.metafields };
+                }
+                return null;
+              } catch (error) {
+                console.error(`Error fetching metafields for product ${product.id}:`, error.message);
+                return null;
+              }
+            })).then(results => results.filter(result => result !== null));
+          
+          return res.json({
+            success: true,
+            products: productsWithSpecs,
+            total: productsWithSpecs.length,
+            totalShopifyProducts: retryProducts.length,
+            limit: safeLimit,
+            page: page,
+            hasNextPage: retryProducts.length === safeLimit,
+            nextPageInfo: (() => {
+              const linkHeader = retryResponse.headers['link'];
+              if (linkHeader && linkHeader.includes('rel="next"')) {
+                const nextMatch = linkHeader.match(/<([^>]+)>; rel="next"/);
+                if (nextMatch) {
+                  const nextUrl = nextMatch[1];
+                  const urlParams = new URLSearchParams(nextUrl.split('?')[1]);
+                  return urlParams.get('page_info');
+                }
+              }
+              return null;
+            })(),
+            message: `Found ${productsWithSpecs.length} products with custom.specification metafields from ${shop}. Showing page ${page} with ${safeLimit} products per page.`
+          });
+        }
+      } catch (retryError) {
+        // If retry also fails, return error
+        return res.status(429).json({ 
+          error: 'Rate limit exceeded',
+          details: 'Shopify API rate limit reached. Please wait and try again.',
+          shop: req.shop,
+          retryAfter: retryAfter
+        });
+      }
     } else {
     res.status(500).json({ 
       error: 'Failed to fetch products',
@@ -663,9 +732,11 @@ app.get('/api/metafield/:id/french', async (req, res) => {
       
       if (metafield.namespace === 'custom' && metafield.key === 'specification') {
         console.log(`✅ Found specification metafield via product GraphQL`);
-        console.log(`🌍 Translations:`, metafield.translations);
         
-        const frenchTranslation = metafield.translations.find(t => t.locale === 'fr');
+        const translations = metafield.translations || [];
+        console.log(`🌍 Translations:`, translations);
+        
+        const frenchTranslation = translations.find(t => t.locale === 'fr');
         if (frenchTranslation) {
           console.log(`✅ Found French translation via product GraphQL:`, frenchTranslation.value.substring(0, 100) + '...');
           res.json({
@@ -767,9 +838,11 @@ app.get('/api/metafield/:id/french', async (req, res) => {
       
       if (metafield.namespace === 'custom' && metafield.key === 'specification') {
         console.log(`✅ Found specification metafield via GraphQL`);
-        console.log(`🌍 Translations:`, metafield.translations);
         
-        const frenchTranslation = metafield.translations.find(t => t.locale === 'fr');
+        const translations = metafield.translations || [];
+        console.log(`🌍 Translations:`, translations);
+        
+        const frenchTranslation = translations.find(t => t.locale === 'fr');
         if (frenchTranslation) {
           console.log(`✅ Found French translation via alternative GraphQL:`, frenchTranslation.value.substring(0, 100) + '...');
           res.json({
