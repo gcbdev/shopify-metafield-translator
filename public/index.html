@@ -461,21 +461,28 @@
                     <span id="current-batch-info" class="batch-info"></span>
                 </div>
             </div>
-            <div class="pagination-controls" style="display: flex; gap: 10px; align-items: center;">
+            <div class="pagination-controls">
                 <button class="btn btn-secondary" onclick="loadPreviousPage()" id="prev-page-btn" disabled>Previous</button>
                 <span id="page-info" class="page-info">Page 1 of 1</span>
                 <button class="btn btn-secondary" onclick="loadNextPage()" id="next-page-btn" disabled>Next</button>
-                <button class="btn" onclick="refreshAllProducts()" style="background-color: #059669; font-weight: bold; flex: 0;">🔄 Refresh/Scan All Products</button>
+                <button class="btn" onclick="translateToFrench()" id="translate-french-btn" style="background-color: #10b981; font-weight: bold;">🌍 Translate to French</button>
+                <button class="btn btn-secondary" onclick="loadProducts()" id="refresh-btn" style="background-color: #6b7280;">🔄 Refresh List</button>
             </div>
         </div>
         
         <div id="progress-container" class="progress-container" style="display: none;">
-            <h3>🔄 Scanning All Products</h3>
+            <h3>🔄 Bulk Translation Progress</h3>
             <div class="progress-bar">
                 <div id="progress-fill" class="progress-fill" style="width: 0%"></div>
             </div>
             <div id="progress-text" class="progress-text">0% Complete</div>
             <div id="progress-details" style="text-align: center; color: #6b7280; margin-top: 10px;"></div>
+            <div class="progress-info" style="margin-top: 15px; padding: 10px; background: #f0f9ff; border-radius: 4px; border-left: 4px solid #0ea5e9;">
+                <p style="margin: 5px 0; font-size: 14px;"><strong>Simple Two-Button Process:</strong></p>
+                <p style="margin: 5px 0; font-size: 14px;"><strong>Button 1:</strong> 🇺🇸 FORCE Translate Original to English (updates original metafield)</p>
+                <p style="margin: 5px 0; font-size: 14px;"><strong>Button 2:</strong> 🌍 Fill French Field (English → French, fills French localization field only)</p>
+                <p style="margin: 5px 0; font-size: 14px;"><strong>Important:</strong> Button 2 assumes content is already in English and fills French field without touching English content.</p>
+            </div>
         </div>
         
         <div id="products-container">
@@ -666,39 +673,6 @@
             // This will be replaced by the actual products display
         }
         
-        async function refreshAllProducts() {
-            try {
-                console.log('Refreshing all products...');
-                
-                // Reset pagination
-                currentPage = 1;
-                nextPageInfo = null;
-                previousPageInfo = null;
-                pageHistory = [];
-                currentPageIndex = 0;
-                totalProducts = 0;
-                
-                // Show progress
-                document.getElementById('progress-container').style.display = 'block';
-                document.getElementById('progress-text').textContent = 'Scanning all products...';
-                
-                // Rescan product count
-                await scanProductCount();
-                
-                // Load first page of products
-                await loadProducts();
-                
-                // Hide progress
-                document.getElementById('progress-container').style.display = 'none';
-                
-                showSuccess('Products refreshed successfully!');
-            } catch (error) {
-                console.error('Error refreshing products:', error);
-                showError('Error refreshing products: ' + error.message);
-                document.getElementById('progress-container').style.display = 'none';
-            }
-        }
-        
         function displayProducts() {
             const container = document.getElementById('products-container');
             
@@ -723,13 +697,17 @@
                                 <div class="content-section">
                                     <h4>Original Content:</h4>
                                     <div class="metafield-preview original-content">${getMetafieldPreview(product)}</div>
-                                </div>
+                        </div>
                                 <div class="content-section">
-                                    <h4>Translated to French:</h4>
+                                    <h4>French Content:</h4>
                                     <div class="metafield-preview french-content" id="french-content-${product.id}">Loading French content...</div>
                                 </div>
                             </div>
                             </div>
+                            <div class="product-actions">
+                            <button class="btn" onclick="viewOriginalContent(${product.id})">View Original Content</button>
+                            <button class="btn btn-secondary" onclick="viewFrenchContent(${product.id})">View French Content</button>
+                        </div>
                 </div>
             `;
                     }).join('')}
@@ -2370,6 +2348,124 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
             return data;
         }
         
+        // New simplified function to translate products on current page to French
+        async function translateToFrench() {
+            const products = document.querySelectorAll('.product-card');
+            if (products.length === 0) {
+                alert('No products to translate. Please load products first.');
+                return;
+            }
+
+            const confirmTranslate = confirm(`🌍 TRANSLATE TO FRENCH\n\nThis will translate ${products.length} products on this page from English to French.\n\n✅ English content will remain UNTOUCHED\n✅ Only French localization field will be filled\n\nProceed?`);
+            if (!confirmTranslate) return;
+
+            // Show progress
+            const progressContainer = document.getElementById('progress-container');
+            progressContainer.style.display = 'block';
+            
+            // Disable buttons
+            document.getElementById('translate-french-btn').disabled = true;
+            
+            let successCount = 0;
+            let errorCount = 0;
+            
+            for (let i = 0; i < products.length; i++) {
+                const productCard = products[i];
+                const metafieldId = productCard.dataset.metafieldId;
+                
+                if (!metafieldId) {
+                    console.log(`Skipping product - no metafield ID`);
+                    continue;
+                }
+                
+                try {
+                    // Update progress
+                    const progress = Math.round(((i + 1) / products.length) * 100);
+                    document.getElementById('progress-fill').style.width = progress + '%';
+                    document.getElementById('progress-text').textContent = `${progress}% Complete`;
+                    document.getElementById('progress-details').textContent = `Translating product ${i + 1} of ${products.length}...`;
+                    
+                    // Get the metafield and translate it
+                    const metafieldResponse = await fetch(`/api/metafield/${metafieldId}?shop=${shop}`);
+                    const metafieldData = await metafieldResponse.json();
+                    
+                    if (!metafieldData.success || !metafieldData.metafield) {
+                        throw new Error('Failed to fetch metafield');
+                    }
+                    
+                    const metafield = metafieldData.metafield;
+                    let jsonContent = JSON.parse(metafield.value);
+                    
+                    // Translate to French
+                    const translatedContent = await translateJsonToFrench(jsonContent);
+                    
+                    // Fill French localization field using the existing endpoint
+                    const translateResponse = await fetch(`/api/metafield/${metafieldId}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            translatedContent: translatedContent,
+                            productId: metafield.owner_id,
+                            shop: shop
+                        })
+                    });
+                    
+                    const result = await translateResponse.json();
+                    
+                    if (result.success) {
+                        successCount++;
+                        console.log(`✅ French translation filled for product`);
+                    } else {
+                        errorCount++;
+                        console.error(`❌ Failed to fill French translation:`, result.error);
+                    }
+                    
+                } catch (error) {
+                    errorCount++;
+                    console.error(`❌ Error translating product:`, error);
+                }
+                
+                // Small delay
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+            
+            // Show completion
+            document.getElementById('progress-text').textContent = 'Complete!';
+            document.getElementById('progress-details').textContent = `✅ Success: ${successCount} | ❌ Errors: ${errorCount}`;
+            
+            alert(`🌍 Translation Complete!\n\n✅ Successfully translated: ${successCount} products\n❌ Failed: ${errorCount} products`);
+            
+            // Re-enable buttons
+            document.getElementById('translate-french-btn').disabled = false;
+            
+            // Reload products to show updated translations
+            loadProducts();
+        }
+        
+        // Helper function to translate JSON content to French
+        async function translateJsonToFrench(jsonContent) {
+            const response = await fetch('/api/translate-json', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    content: jsonContent,
+                    sourceLanguage: 'en',
+                    targetLanguage: 'fr'
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                return data.translatedContent;
+            } else {
+                throw new Error(data.error || 'Translation failed');
+            }
+        }
         
         function showError(message) {
             const errorDiv = document.getElementById('error-message');

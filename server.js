@@ -1,13 +1,31 @@
 const express = require('express');
+const session = require('express-session');
+const cookieParser = require('cookie-parser');
+const cors = require('cors');
+const helmet = require('helmet');
 const path = require('path');
 const axios = require('axios');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Basic middleware - simplified for serverless
+// Basic middleware
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false
+}));
+app.use(cors());
+app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Session configuration
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'your-session-secret',
+  resave: false,
+  saveUninitialized: false,
+  cookie: { secure: false }
+}));
 
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
@@ -739,11 +757,11 @@ app.get('/api/metafield/:id/french', async (req, res) => {
 
     console.log(`📊 Alternative GraphQL response:`, JSON.stringify(alternativeResponse.data, null, 2));
 
-    const alternativeMetafieldEdges = alternativeResponse.data.data?.product?.metafields?.edges || [];
-    console.log(`🔍 Found ${alternativeMetafieldEdges.length} metafields via GraphQL`);
+    const metafieldEdges = alternativeResponse.data.data?.product?.metafields?.edges || [];
+    console.log(`🔍 Found ${metafieldEdges.length} metafields via GraphQL`);
 
     // Look for the specification metafield with French translation
-    for (const edge of alternativeMetafieldEdges) {
+    for (const edge of metafieldEdges) {
       const metafield = edge.node;
       console.log(`🔍 Checking metafield: ${metafield.namespace}.${metafield.key}`);
       
@@ -770,7 +788,8 @@ app.get('/api/metafield/:id/french', async (req, res) => {
       debug: {
         productId: productId,
         metafieldId: id,
-        availableMetafields: allMetafields.map(m => `${m.namespace}.${m.key}`)
+        availableMetafields: allMetafields.map(m => `${m.namespace}.${m.key}`),
+        translations: translations
       }
     });
   } catch (error) {
@@ -1654,12 +1673,9 @@ app.use((error, req, res, next) => {
   });
 });
 
-// Export app for Vercel serverless
-module.exports = app;
+// Start server
+app.listen(PORT, () => {
+  console.log(`Metafield Translator app running on port ${PORT}`);
+});
 
-// Start server only if not in serverless environment
-if (process.env.NODE_ENV !== 'production' || require.main === module) {
-  app.listen(PORT, () => {
-    console.log(`Metafield Translator app running on port ${PORT}`);
-  });
-}
+module.exports = app;
