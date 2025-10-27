@@ -706,11 +706,21 @@ app.get('/api/metafield/:id/french', async (req, res) => {
     if (translationResponse && translationResponse.data) {
       console.log(`📊 Translation response:`, JSON.stringify(translationResponse.data, null, 2));
       
+      // Check for GraphQL errors
+      if (translationResponse.data.errors) {
+        console.log(`❌ GraphQL errors:`, translationResponse.data.errors);
+      }
+      
       const translations = translationResponse.data.data?.translations || [];
       console.log(`🌍 Found ${translations.length} translations`);
       
       if (translations.length > 0) {
+        console.log(`✅ Translations found!`);
         console.log(`All translation keys:`, translations.map(t => t.key));
+        console.log(`All translation values preview:`, translations.map(t => {
+          const val = t.value || '';
+          return val.substring ? val.substring(0, 50) : String(val).substring(0, 50);
+        }));
         
         // Look for the value field
         const translationValue = translations.find(t => t.key === 'value');
@@ -724,11 +734,26 @@ app.get('/api/metafield/:id/french', async (req, res) => {
           });
           return;
         } else {
-          console.log(`❌ No 'value' key found in translations. Available keys:`, translations.map(t => t.key));
+          console.log(`⚠️ No 'value' key found. Available keys:`, translations.map(t => t.key));
+          // Try to use the first translation if it exists
+          if (translations.length === 1) {
+            console.log(`Using the only available translation`);
+            res.json({
+              success: true,
+              frenchContent: translations[0].value
+            });
+            return;
+          }
         }
       } else {
-        console.log(`❌ No translations returned`);
+        console.log(`❌ No translations returned from API`);
+        console.log(`Response structure:`, Object.keys(translationResponse.data));
+        if (translationResponse.data.data) {
+          console.log(`Data keys:`, Object.keys(translationResponse.data.data));
+        }
       }
+    } else {
+      console.log(`❌ No translation response received`);
     }
 
     // If no translation found, return error
