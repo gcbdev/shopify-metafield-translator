@@ -1,31 +1,13 @@
 const express = require('express');
-const session = require('express-session');
-const cookieParser = require('cookie-parser');
-const cors = require('cors');
-const helmet = require('helmet');
 const path = require('path');
 const axios = require('axios');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Basic middleware
-app.use(helmet({
-  contentSecurityPolicy: false,
-  crossOriginEmbedderPolicy: false
-}));
-app.use(cors());
-app.use(cookieParser());
+// Basic middleware - simplified for serverless
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-// Session configuration
-app.use(session({
-  secret: process.env.SESSION_SECRET || 'your-session-secret',
-  resave: false,
-  saveUninitialized: false,
-  cookie: { secure: false }
-}));
 
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
@@ -1673,9 +1655,12 @@ app.use((error, req, res, next) => {
   });
 });
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`Metafield Translator app running on port ${PORT}`);
-});
-
+// Export app for Vercel serverless
 module.exports = app;
+
+// Start server only if not in serverless environment
+if (process.env.NODE_ENV !== 'production' || require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Metafield Translator app running on port ${PORT}`);
+  });
+}

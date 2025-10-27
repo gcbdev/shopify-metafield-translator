@@ -1,57 +1,49 @@
-# Shopify Metafield Translator App
+# Shopify Metafield Translator
 
-This Shopify app allows you to translate specific product metafields that contain JSON-formatted data.
+Simple Shopify app to view French translations from specification metafields.
 
 ## Features
 
-- Translate product metafields with JSON formatting
-- Support for custom.specification metafield
-- Secure API authentication with Shopify
-- Web interface for managing translations
-- **Free MyMemory translation API** - No API key required!
-- Support for Google Translate, DeepL, and Azure (optional)
+- View original specification content
+- View French translations automatically
+- Scan and refresh all products
+- Simplified UI with one-click navigation
 
 ## Setup
 
-1. Install dependencies:
-```bash
-npm install
-```
+1. **Install dependencies:**
+   ```bash
+   npm install
+   ```
 
-2. Configure environment variables in `.env`:
-```
-SHOPIFY_API_KEY=816678fd4b1090ece40548e15b569dd5
-SHOPIFY_API_SECRET=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
-SHOPIFY_SCOPES=read_products,write_products,read_product_listings,write_product_listings
-HOST=https://your-app-domain.com
-PORT=3000
-TRANSLATION_SERVICE=mymemory
-```
+2. **Set environment variables in Vercel:**
+   ```
+   SHOPIFY_ACCESS_TOKEN = your_access_token
+   SHOPIFY_API_KEY = your_api_key  
+   SHOPIFY_API_SECRET = your_api_secret
+   ```
 
-3. Start the development server:
-```bash
-npm run dev
-```
+3. **Deploy to Vercel:**
+   - Push to GitHub
+   - Import project in Vercel
+   - Add environment variables
+   - Deploy!
 
 ## Usage
 
-1. Install the app in your Shopify store
-2. Navigate to the app dashboard
-3. Select products to translate their metafields
-4. Choose target languages for translation
-5. Apply translations to update metafields
+Visit: `https://your-app.vercel.app?shop=your-store.myshopify.com`
 
-## API Endpoints
+The app will automatically:
+- Load all products with specification metafields
+- Display original and French content side-by-side
+- Allow you to refresh/scan all products
 
-- `GET /api/products` - List products with metafields
-- `POST /api/translate` - Translate specific metafield
-- `PUT /api/metafield/:id` - Update metafield with translation
+## Changes Made
 
-## Security
+✅ Removed all extra buttons  
+✅ Simplified UI to show only "Translated to French" field  
+✅ Added "Refresh/Scan All Products" button  
+✅ Fixed serverless compatibility for Vercel  
+✅ Removed problematic middleware (sessions, helmet, etc.)  
 
-- All API calls are authenticated with Shopify
-- Sensitive data is encrypted
-- Rate limiting implemented
-  
-
-------------------------
+Ready to deploy! 🚀
