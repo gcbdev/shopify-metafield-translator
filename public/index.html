@@ -1485,7 +1485,7 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
                     }
 
                     // Translate English content to French
-                    const translateResponse = await fetch(`/api/metafield/${metafieldId}`, {
+                    const translateResponse = await fetch(`/api/metafield/${metafieldId}?shop=${shop}`, {
                         method: 'PUT',
                         headers: {
                             'Content-Type': 'application/json',

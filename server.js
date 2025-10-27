@@ -645,10 +645,10 @@ app.get('/api/metafield/:id/french', async (req, res) => {
     let translationResponse;
     try {
       const translationQuery = `
-        query GetProductTranslations($productId: ID!) {
+        query {
           translations(
             resourceType: PRODUCT,
-            resourceId: $productId,
+            resourceId: "gid://shopify/Product/${productId}",
             locale: "fr"
           ) {
             key
@@ -658,44 +658,38 @@ app.get('/api/metafield/:id/french', async (req, res) => {
       `;
       
       translationResponse = await axios.post(`https://${shop}/admin/api/2025-01/graphql.json`, {
-        query: translationQuery,
-      variables: {
-          productId: `gid://shopify/Product/${productId}`
-      }
-    }, {
-      headers: {
-        'X-Shopify-Access-Token': accessToken,
-        'Content-Type': 'application/json'
-      }
-    });
+        query: translationQuery
+      }, {
+        headers: {
+          'X-Shopify-Access-Token': accessToken,
+          'Content-Type': 'application/json'
+        }
+      });
       console.log('✅ 2025-01 translation query succeeded');
     } catch (err) {
       console.log('2025-01 translation query failed, trying 2024-10...', err.message);
       try {
         const translationQuery2024 = `
-          query GetProductTranslations($productId: ID!) {
+          query {
             translations(
               resourceType: PRODUCT,
-              resourceId: $productId,
+              resourceId: "gid://shopify/Product/${productId}",
               locale: "fr"
             ) {
               key
-                  value
-        }
-      }
-    `;
-
+              value
+            }
+          }
+        `;
+        
         translationResponse = await axios.post(`https://${shop}/admin/api/2024-10/graphql.json`, {
-          query: translationQuery2024,
-      variables: {
-        productId: `gid://shopify/Product/${productId}`
-      }
-    }, {
-      headers: {
-        'X-Shopify-Access-Token': accessToken,
-        'Content-Type': 'application/json'
-      }
-    });
+          query: translationQuery2024
+        }, {
+          headers: {
+            'X-Shopify-Access-Token': accessToken,
+            'Content-Type': 'application/json'
+          }
+        });
         console.log('✅ 2024-10 translation query succeeded');
       } catch (err2) {
         console.log('Both translation queries failed:', err2.message);
@@ -724,15 +718,19 @@ app.get('/api/metafield/:id/french', async (req, res) => {
         }));
         
         // Look for the metafield translation using multiple possible key formats
+        const primaryKey = `metafields.${metafield.namespace}.${metafield.key}`;
+        console.log(`Looking for French translation with primary key: ${primaryKey}`);
+        
+        // Try multiple possible key formats
         const possibleKeys = [
-          `metafields.${metafield.namespace}.${metafield.key}`,
+          primaryKey,
           `metafield.${metafield.namespace}.${metafield.key}`,
           `${metafield.namespace}.${metafield.key}`,
           metafield.key,
           'value'
         ];
         
-        console.log(`Looking for translation with these possible keys:`, possibleKeys);
+        console.log(`Trying all possible keys:`, possibleKeys);
         
         let metafieldTranslation = null;
         for (const searchKey of possibleKeys) {
@@ -745,6 +743,7 @@ app.get('/api/metafield/:id/french', async (req, res) => {
         
         // If not found by key, try to find any JSON value (specifications are JSON)
         if (!metafieldTranslation) {
+          console.log(`⚠️ No exact match found, searching for JSON content...`);
           for (const t of translations) {
             if (t.value && (t.value.trim().startsWith('{') || t.value.trim().startsWith('['))) {
               metafieldTranslation = t;
