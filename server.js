@@ -646,7 +646,7 @@ app.get('/api/metafield/:id/french', async (req, res) => {
     try {
       const translationQuery = `
         query {
-          translations(
+          fr: translations(
             resourceType: PRODUCT,
             resourceId: "gid://shopify/Product/${productId}",
             locale: "fr"
@@ -671,7 +671,7 @@ app.get('/api/metafield/:id/french', async (req, res) => {
       try {
         const translationQuery2024 = `
           query {
-            translations(
+            fr: translations(
               resourceType: PRODUCT,
               resourceId: "gid://shopify/Product/${productId}",
               locale: "fr"
@@ -706,7 +706,7 @@ app.get('/api/metafield/:id/french', async (req, res) => {
         console.log(`❌ GraphQL errors:`, translationResponse.data.errors);
       }
       
-      const translations = translationResponse.data.data?.translations || [];
+      const translations = translationResponse.data.data?.fr || [];
       console.log(`🌍 Found ${translations.length} translations`);
       
       if (translations.length > 0) {
