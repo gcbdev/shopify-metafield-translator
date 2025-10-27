@@ -659,15 +659,15 @@ app.get('/api/metafield/:id/french', async (req, res) => {
       
       translationResponse = await axios.post(`https://${shop}/admin/api/2025-01/graphql.json`, {
         query: translationQuery,
-        variables: {
+      variables: {
           productId: `gid://shopify/Product/${productId}`
-        }
-      }, {
-        headers: {
-          'X-Shopify-Access-Token': accessToken,
-          'Content-Type': 'application/json'
-        }
-      });
+      }
+    }, {
+      headers: {
+        'X-Shopify-Access-Token': accessToken,
+        'Content-Type': 'application/json'
+      }
+    });
       console.log('✅ 2025-01 translation query succeeded');
     } catch (err) {
       console.log('2025-01 translation query failed, trying 2024-10...', err.message);
@@ -680,22 +680,22 @@ app.get('/api/metafield/:id/french', async (req, res) => {
               locale: "fr"
             ) {
               key
-              value
-            }
-          }
-        `;
-        
+                  value
+        }
+      }
+    `;
+
         translationResponse = await axios.post(`https://${shop}/admin/api/2024-10/graphql.json`, {
           query: translationQuery2024,
-          variables: {
-            productId: `gid://shopify/Product/${productId}`
-          }
-        }, {
-          headers: {
-            'X-Shopify-Access-Token': accessToken,
-            'Content-Type': 'application/json'
-          }
-        });
+      variables: {
+        productId: `gid://shopify/Product/${productId}`
+      }
+    }, {
+      headers: {
+        'X-Shopify-Access-Token': accessToken,
+        'Content-Type': 'application/json'
+      }
+    });
         console.log('✅ 2024-10 translation query succeeded');
       } catch (err2) {
         console.log('Both translation queries failed:', err2.message);
@@ -723,11 +723,36 @@ app.get('/api/metafield/:id/french', async (req, res) => {
           return val.substring ? val.substring(0, 50) : String(val).substring(0, 50);
         }));
         
-        // Look for the metafield translation using the correct key format
-        const metafieldKey = `metafields.${metafield.namespace}.${metafield.key}`;
-        console.log(`Looking for translation with key: ${metafieldKey}`);
+        // Look for the metafield translation using multiple possible key formats
+        const possibleKeys = [
+          `metafields.${metafield.namespace}.${metafield.key}`,
+          `metafield.${metafield.namespace}.${metafield.key}`,
+          `${metafield.namespace}.${metafield.key}`,
+          metafield.key,
+          'value'
+        ];
         
-        const metafieldTranslation = translations.find(t => t.key === metafieldKey);
+        console.log(`Looking for translation with these possible keys:`, possibleKeys);
+        
+        let metafieldTranslation = null;
+        for (const searchKey of possibleKeys) {
+          metafieldTranslation = translations.find(t => t.key === searchKey);
+          if (metafieldTranslation) {
+            console.log(`✅ Found translation with key: ${searchKey}`);
+            break;
+          }
+        }
+        
+        // If not found by key, try to find any JSON value (specifications are JSON)
+        if (!metafieldTranslation) {
+          for (const t of translations) {
+            if (t.value && (t.value.trim().startsWith('{') || t.value.trim().startsWith('['))) {
+              metafieldTranslation = t;
+              console.log(`✅ Found JSON translation with key: ${t.key}`);
+              break;
+            }
+          }
+        }
         
         if (metafieldTranslation) {
           console.log(`✅ Found French metafield translation!`);
@@ -738,14 +763,14 @@ app.get('/api/metafield/:id/french', async (req, res) => {
           });
           return;
         } else {
-          console.log(`⚠️ No metafield translation found. Available keys:`, translations.map(t => t.key));
+          console.log(`⚠️ No metafield translation found. Full translation list:`, translations);
         }
       } else {
         console.log(`❌ No translations returned from API`);
-        console.log(`Response structure:`, Object.keys(translationResponse.data));
-        if (translationResponse.data.data) {
-          console.log(`Data keys:`, Object.keys(translationResponse.data.data));
-        }
+        console.log(`Full response:`, JSON.stringify(translationResponse.data, null, 2));
+        if (translationResponse.data.errors) {
+          console.log(`❌ GraphQL Errors:`, translationResponse.data.errors);
+      }
       }
     } else {
       console.log(`❌ No translation response received`);
