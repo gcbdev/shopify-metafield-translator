@@ -1355,26 +1355,25 @@
                     
                     const frenchContentDiv = document.getElementById(`french-content-${productId}`);
                     if (frenchContentDiv) {
-                        if (data.success && data.frenchContent && data.frenchContent.trim() !== '') {
+                        if (data.success && data.frenchContent) {
                             try {
-                                // Try to parse as JSON and format it
                                 const frenchJson = JSON.parse(data.frenchContent);
-                                frenchContentDiv.textContent = JSON.stringify(frenchJson, null, 2);
+                                frenchContentDiv.textContent = JSON.stringify(frenchJson, null, 2).substring(0, 200) + '...';
                             } catch (e) {
-                                // If not JSON, just display as is
-                                frenchContentDiv.textContent = data.frenchContent;
+                                frenchContentDiv.textContent = data.frenchContent.substring(0, 200) + '...';
                             }
                         } else {
-                            // Leave blank if no French translation
-                            frenchContentDiv.textContent = '';
+                            frenchContentDiv.textContent = 'No French translation available';
+                            frenchContentDiv.style.color = '#9ca3af';
+                            frenchContentDiv.style.fontStyle = 'italic';
                         }
                     }
                 } catch (error) {
                     console.error(`Error loading French content for product ${productId}:`, error);
                     const frenchContentDiv = document.getElementById(`french-content-${productId}`);
                     if (frenchContentDiv) {
-                        // Leave blank on error
-                        frenchContentDiv.textContent = '';
+                        frenchContentDiv.textContent = 'Error loading French content';
+                        frenchContentDiv.style.color = '#ef4444';
                     }
                 }
             }
