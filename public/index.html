@@ -466,6 +466,7 @@
                 <span id="page-info" class="page-info">Page 1 of 1</span>
                 <button class="btn btn-secondary" onclick="loadNextPage()" id="next-page-btn" disabled>Next</button>
                 <button class="btn" onclick="translateToFrench()" id="translate-to-french-btn" style="background-color: #10b981; font-weight: bold;">🌍 Translate Current Page to French</button>
+                <button class="btn" onclick="translateAllPages()" id="translate-all-pages-btn" style="background-color: #8b5cf6; font-weight: bold;">🚀 Translate ALL Pages (Auto-paginate)</button>
                 <button class="btn btn-secondary" onclick="refreshProductsList()" id="refresh-list-btn" style="background-color: #6b7280; font-weight: bold;">🔄 Refresh List</button>
             </div>
         </div>
@@ -545,9 +546,10 @@
             }
         };
         
-        async function loadProducts() {
+        async function loadProducts(pageNum = null) {
             try {
-                console.log('Loading products for shop:', shop, 'Page:', currentPage);
+                const targetPage = pageNum || currentPage;
+                console.log('Loading products for shop:', shop, 'Page:', targetPage);
                 
                 if (!shop) {
                     showError('Shop parameter is required');
@@ -567,32 +569,70 @@
                 
                 showLoading();
                 
-                const response = await fetch(`/api/products?shop=${shop}&limit=${productsPerPage}&showAll=${showAllProducts}&page_info=${nextPageInfo || ''}`);
-                const data = await response.json();
+                // Retry logic to ensure we get full products per page
+                let maxRetries = 3;
+                let retryCount = 0;
+                let productsLoaded = false;
                 
-                console.log('Products API response:', data);
-                
-                if (data.success) {
-                    products = data.products;
-                    // Store API response for pagination limit checking
-                    window.lastApiResponse = data;
+                while (retryCount < maxRetries && !productsLoaded) {
+                    const response = await fetch(`/api/products?shop=${shop}&limit=${productsPerPage}&showAll=${showAllProducts}&page_info=${nextPageInfo || ''}`);
+                    const data = await response.json();
                     
-                    // Store pagination info and update page history
-                    if (nextPageInfo && !pageHistory.includes(nextPageInfo)) {
-                        pageHistory.push(nextPageInfo);
-                        currentPageIndex = pageHistory.length - 1;
+                    console.log(`Products API response (attempt ${retryCount + 1}/${maxRetries}):`, data);
+                    
+                    if (data.success) {
+                        const productsCount = data.products.length;
+                        console.log(`Received ${productsCount} products on page ${targetPage}`);
+                        
+                        // Check if we got the expected number of products
+                        if (productsCount >= productsPerPage || productsCount === 0) {
+                            products = data.products;
+                            // Store API response for pagination limit checking
+                            window.lastApiResponse = data;
+                            
+                            // Store pagination info and update page history
+                            if (nextPageInfo && !pageHistory.includes(nextPageInfo)) {
+                                pageHistory.push(nextPageInfo);
+                                currentPageIndex = pageHistory.length - 1;
+                            }
+                            nextPageInfo = data.nextPageInfo;
+                            
+                            // Update current page based on history
+                            currentPage = currentPageIndex + 1;
+                            
+                            // Use the scanned total count, not the API response count
+                            totalPages = Math.ceil(totalProducts / productsPerPage);
+                            displayProducts();
+                            updateProductCount();
+                            productsLoaded = true;
+                        } else {
+                            // Didn't get enough products, retry after a short delay
+                            retryCount++;
+                            if (retryCount < maxRetries) {
+                                console.log(`⚠️ Only got ${productsCount} products, retrying... (attempt ${retryCount + 1}/${maxRetries})`);
+                                await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds before retry
+                            } else {
+                                // Use whatever we got
+                                console.log(`⚠️ Max retries reached. Using ${productsCount} products.`);
+                                products = data.products;
+                                window.lastApiResponse = data;
+                                
+                                if (nextPageInfo && !pageHistory.includes(nextPageInfo)) {
+                                    pageHistory.push(nextPageInfo);
+                                    currentPageIndex = pageHistory.length - 1;
+                                }
+                                nextPageInfo = data.nextPageInfo;
+                                currentPage = currentPageIndex + 1;
+                                totalPages = Math.ceil(totalProducts / productsPerPage);
+                                displayProducts();
+                                updateProductCount();
+                                productsLoaded = true;
+                            }
+                        }
+                    } else {
+                        showError('Failed to load products: ' + (data.error || 'Unknown error'));
+                        break;
                     }
-                    nextPageInfo = data.nextPageInfo;
-                    
-                    // Update current page based on history
-                    currentPage = currentPageIndex + 1;
-                    
-                    // Use the scanned total count, not the API response count
-                    totalPages = Math.ceil(totalProducts / productsPerPage);
-                    displayProducts();
-                    updateProductCount();
-                } else {
-                    showError('Failed to load products: ' + (data.error || 'Unknown error'));
                 }
             } catch (error) {
                 console.error('Error loading products:', error);
@@ -1615,6 +1655,169 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
 
             // Show results
             alert(`TRANSLATION COMPLETE!\n\n✅ Successfully translated: ${successCount} products\n❌ Failed: ${errorCount} products\n\nClick "Refresh List" to see updated products.`);
+        }
+
+        // Function to translate ALL products across all pages with auto-pagination
+        async function translateAllPages() {
+            const totalProducts = parseInt(document.getElementById('total-products').textContent) || 0;
+            
+            if (totalProducts === 0) {
+                alert('No products found. Please load products first.');
+                return;
+            }
+
+            const confirmTranslate = confirm(`🌍 TRANSLATE ALL PAGES\n\nThis will translate ALL ${totalProducts} products across ALL pages.\n\n✅ French field will be filled\n✅ English content will remain UNTOUCHED\n✅ Auto-paginates through all pages\n✅ 5 second delay between pages to avoid rate limits\n\n⏱️ Estimated time: ${Math.ceil(totalProducts / 20 * 6)} seconds\n\nAre you sure you want to proceed?`);
+            
+            if (!confirmTranslate) return;
+
+            // Show progress container
+            const progressContainer = document.getElementById('progress-container');
+            progressContainer.style.display = 'block';
+            document.getElementById('progress-fill').style.width = '0%';
+            document.getElementById('progress-text').textContent = '0% Complete';
+            document.getElementById('progress-details').textContent = 'Starting translation of all pages...';
+
+            // Disable buttons during translation
+            const allButtons = ['force-english-btn', 'translate-to-french-btn', 'translate-all-pages-btn', 'refresh-list-btn'];
+            allButtons.forEach(id => {
+                const btn = document.getElementById(id);
+                if (btn) btn.disabled = true;
+            });
+
+            let totalSuccessCount = 0;
+            let totalErrorCount = 0;
+            let currentPage = 1;
+            let totalPages = Math.ceil(totalProducts / 20);
+
+            try {
+                while (currentPage <= totalPages) {
+                    console.log(`\n=== TRANSLATING PAGE ${currentPage}/${totalPages} ===`);
+                    
+                    // Update progress
+                    const pageProgress = Math.round((currentPage / totalPages) * 100);
+                    document.getElementById('progress-fill').style.width = pageProgress + '%';
+                    document.getElementById('progress-text').textContent = `Page ${currentPage}/${totalPages}`;
+                    document.getElementById('progress-details').textContent = `Translating page ${currentPage} of ${totalPages} (${totalSuccessCount} success, ${totalErrorCount} errors)...`;
+
+                    // Load products for current page
+                    await loadProducts(currentPage);
+                    
+                    // Wait a bit for products to load
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+
+                    // Get products from current page
+                    const products = document.querySelectorAll('.product-card');
+                    console.log(`Found ${products.length} products on page ${currentPage}`);
+
+                    if (products.length === 0) {
+                        console.log(`No products on page ${currentPage}, moving to next page`);
+                        currentPage++;
+                        continue;
+                    }
+
+                    // Translate products on current page
+                    for (let i = 0; i < products.length; i++) {
+                        const product = products[i];
+                        const metafieldId = product.dataset.metafieldId;
+                        const productTitle = product.querySelector('.product-title').textContent;
+
+                        console.log(`Translating product ${i + 1}/${products.length}: ${productTitle}`);
+
+                        if (!metafieldId) {
+                            console.log(`Skipping product ${productTitle} - no metafield ID`);
+                            continue;
+                        }
+
+                        try {
+                            // Get the metafield content to translate
+                            const metafieldResponse = await fetch(`/api/metafield/${metafieldId}?shop=${shop}`);
+                            const metafieldData = await metafieldResponse.json();
+
+                            if (!metafieldData.success) {
+                                throw new Error(metafieldData.error || 'Failed to get metafield');
+                            }
+
+                            const originalContent = metafieldData.metafield.value;
+                            let jsonContent;
+
+                            try {
+                                jsonContent = JSON.parse(originalContent);
+                            } catch (parseError) {
+                                console.log(`Skipping product ${productTitle} - invalid JSON`);
+                                continue;
+                            }
+
+                            // Translate English content to French
+                            const translateResponse = await fetch(`/api/metafield/${metafieldId}?shop=${shop}`, {
+                                method: 'PUT',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                },
+                                body: JSON.stringify({
+                                    translatedContent: jsonContent, // This will be translated to French
+                                    productId: parseInt(product.dataset.productId)
+                                })
+                            });
+
+                            const result = await translateResponse.json();
+
+                            if (result.success) {
+                                totalSuccessCount++;
+                                console.log(`✅ Translated to French: ${productTitle}`);
+                            } else {
+                                totalErrorCount++;
+                                console.error(`❌ Failed to translate ${productTitle}:`, result.error);
+                            }
+
+                        } catch (error) {
+                            totalErrorCount++;
+                            console.error(`❌ Error translating ${productTitle}:`, error.message);
+                        }
+
+                        // Small delay between products
+                        await new Promise(resolve => setTimeout(resolve, 300));
+                    }
+
+                    currentPage++;
+
+                    // 5 second delay before moving to next page (unless it's the last page)
+                    if (currentPage <= totalPages) {
+                        console.log(`⏱️ Waiting 5 seconds before moving to next page...`);
+                        document.getElementById('progress-details').textContent = `Waiting 5 seconds before page ${currentPage}...`;
+                        await new Promise(resolve => setTimeout(resolve, 5000));
+                    }
+                }
+
+                // Final update
+                document.getElementById('progress-fill').style.width = '100%';
+                document.getElementById('progress-text').textContent = 'Translation Complete!';
+                document.getElementById('progress-details').textContent = `✅ ${totalSuccessCount} successful | ❌ ${totalErrorCount} failed`;
+
+                // Show results
+                alert(`🎉 ALL PAGES TRANSLATED!\n\n✅ Successfully translated: ${totalSuccessCount} products\n❌ Failed: ${totalErrorCount} products\n\nTranslation completed across all pages!`);
+
+                // Reload first page
+                await loadProducts(1);
+
+            } catch (error) {
+                console.error('Error in translateAllPages:', error);
+                showError('Failed to translate all pages: ' + error.message);
+                
+                // Update progress with error
+                document.getElementById('progress-details').textContent = `❌ Error: ${error.message}`;
+            } finally {
+                // Re-enable buttons
+                allButtons.forEach(id => {
+                    const btn = document.getElementById(id);
+                    if (btn) btn.disabled = false;
+                });
+
+                // Hide progress after 5 seconds
+                setTimeout(() => {
+                    const progressContainer = document.getElementById('progress-container');
+                    if (progressContainer) progressContainer.style.display = 'none';
+                }, 5000);
+            }
         }
 
         // Function to force translate products to English
