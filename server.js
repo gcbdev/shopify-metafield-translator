@@ -5,6 +5,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const path = require('path');
 const axios = require('axios');
+const RateLimitManager = require('./rate-limit-manager');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -273,44 +274,68 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
       }));
     } else {
     console.log('Checking metafields for each product...');
-      // Check each product for custom.specification metafield with parallel processing
-      const metafieldPromises = products.map(async (product) => {
-      try {
-        console.log(`Checking metafields for product ${product.id}: ${product.title}`);
-        const metafieldResponse = await axios.get(`https://${shop}/admin/api/2023-10/products/${product.id}/metafields.json`, {
-          headers: {
-            'X-Shopify-Access-Token': accessToken,
-            'Content-Type': 'application/json'
-          },
-          params: {
-            namespace: 'custom',
-            key: 'specification'
-          }
-        });
-
-        console.log(`Product ${product.id} metafields:`, metafieldResponse.data.metafields.length);
-        if (metafieldResponse.data.metafields && metafieldResponse.data.metafields.length > 0) {
-            return {
-            id: product.id,
-            title: product.title,
-            handle: product.handle,
-            metafields: metafieldResponse.data.metafields
-            };
-        } else {
-          console.log(`❌ Product ${product.id} has no custom.specification metafield`);
-            return null;
-        }
-      } catch (error) {
-        console.error(`Error fetching metafields for product ${product.id}:`, error.message);
-          return null;
-        }
-      });
-
-      // Wait for all metafield requests to complete
-      const metafieldResults = await Promise.all(metafieldPromises);
       
-      // Filter out null results and add to productsWithSpecs
-      productsWithSpecs = metafieldResults.filter(result => result !== null);
+      // Initialize rate limit manager
+      const rateLimitManager = new RateLimitManager(shop, accessToken);
+      
+      // Process products with rate limit protection
+      productsWithSpecs = [];
+      
+      // Process products in smaller chunks to respect rate limits
+      const chunkSize = 10; // Process 10 products at a time
+      for (let i = 0; i < products.length; i += chunkSize) {
+        const chunk = products.slice(i, i + chunkSize);
+        
+        // Check rate limit before processing chunk
+        await rateLimitManager.ensureRateLimitAvailable();
+        
+        console.log(`Processing chunk ${Math.floor(i/chunkSize) + 1}/${Math.ceil(products.length/chunkSize)}`);
+        
+        // Check each product for custom.specification metafield with parallel processing
+        const metafieldPromises = chunk.map(async (product) => {
+          try {
+            console.log(`Checking metafields for product ${product.id}: ${product.title}`);
+            const metafieldResponse = await axios.get(`https://${shop}/admin/api/2023-10/products/${product.id}/metafields.json`, {
+              headers: {
+                'X-Shopify-Access-Token': accessToken,
+                'Content-Type': 'application/json'
+              },
+              params: {
+                namespace: 'custom',
+                key: 'specification'
+              }
+            });
+
+            console.log(`Product ${product.id} metafields:`, metafieldResponse.data.metafields.length);
+            if (metafieldResponse.data.metafields && metafieldResponse.data.metafields.length > 0) {
+                return {
+                id: product.id,
+                title: product.title,
+                handle: product.handle,
+                metafields: metafieldResponse.data.metafields
+                };
+            } else {
+              console.log(`❌ Product ${product.id} has no custom.specification metafield`);
+                return null;
+            }
+          } catch (error) {
+            console.error(`Error fetching metafields for product ${product.id}:`, error.message);
+              return null;
+            }
+          });
+
+        // Wait for all metafield requests in this chunk to complete
+        const chunkResults = await Promise.all(metafieldPromises);
+        
+        // Filter out null results and add to productsWithSpecs
+        const validResults = chunkResults.filter(result => result !== null);
+        productsWithSpecs = [...productsWithSpecs, ...validResults];
+        
+        // Small delay between chunks to avoid overwhelming the API
+        if (i + chunkSize < products.length) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
     }
 
     console.log('=== FINAL RESULTS ===');
@@ -515,9 +540,10 @@ async function translateText(text, sourceLanguage, targetLanguage) {
     console.log('MyMemory failed, using fallback...');
   }
 
-  // Final fallback - return original text with language tag
+  // Final fallback - return original text (no language tag)
   console.log(`❌ All translation services failed for: "${text}"`);
-  return `[${targetLanguage.toUpperCase()}] ${text}`;
+  console.log(`⚠️ Returning original text without translation`);
+  return text;
 }
 
 // Translate JSON content - return ONLY the French translation
@@ -607,8 +633,15 @@ app.get('/api/metafield/:id', authenticateShopify, async (req, res) => {
   }
 });
 
-// Get French content for a metafield
+// Get French content for a metafield - DISABLED to reduce API load
 app.get('/api/metafield/:id/french', async (req, res) => {
+  // Endpoint disabled to reduce API load
+  return res.status(503).json({ 
+    success: false,
+    error: 'French content endpoint is disabled to reduce API load',
+    message: 'This endpoint has been disabled for performance reasons'
+  });
+  
   try {
     const { id } = req.params;
     const shop = req.query.shop;
@@ -1074,10 +1107,14 @@ app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
       return res.status(400).json({ error: 'Translated content and product ID are required' });
     }
 
-    console.log('Creating French translation for metafield:', id);
+    console.log('🔄 Creating/Updating French translation for metafield:', id);
     console.log('Product ID:', productId);
     console.log('Original content preview:', JSON.stringify(translatedContent).substring(0, 200) + '...');
     console.log('Metafield GraphQL ID:', `gid://shopify/Metafield/${id}`);
+    console.log('⚠️ This will REPLACE any existing French translation');
+    
+    // Initialize rate limit manager
+    const rateLimitManager = new RateLimitManager(shop, accessToken);
     
     // Translate content from English to French
     console.log('Translating content to French...');
@@ -1145,15 +1182,9 @@ app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
 
     console.log('GraphQL variables:', JSON.stringify(variables, null, 2));
 
-    const response = await axios.post(`https://${shop}/admin/api/2024-01/graphql.json`, {
-      query: graphqlQuery,
-      variables: variables
-    }, {
-      headers: {
-        'X-Shopify-Access-Token': accessToken,
-        'Content-Type': 'application/json'
-      }
-    });
+    // Use rate limit manager for GraphQL request
+    const responseData = await rateLimitManager.makeGraphQLRequest(graphqlQuery, variables);
+    const response = { data: responseData, status: 200 };
 
     console.log('GraphQL response:', JSON.stringify(response.data, null, 2));
 
@@ -1214,6 +1245,13 @@ app.post('/api/bulk-translate-all', authenticateShopify, async (req, res) => {
 
     // Set a longer timeout for this operation
     res.setTimeout(300000); // 5 minutes timeout
+
+    // Initialize rate limit manager
+    const rateLimitManager = new RateLimitManager(shop, accessToken);
+    
+    // Check initial rate limit status
+    const initialStatus = await rateLimitManager.getRateLimitStatus();
+    console.log('📊 Initial rate limit status:', initialStatus);
 
     let allProducts = [];
     let nextPageInfo = null;
@@ -1312,6 +1350,9 @@ app.post('/api/bulk-translate-all', authenticateShopify, async (req, res) => {
       
       console.log(`Processing batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(allProducts.length/batchSize)} (${batch.length} products)`);
       
+      // Check rate limit before processing each batch
+      await rateLimitManager.ensureRateLimitAvailable();
+      
       // Process batch in parallel
       const batchPromises = batch.map(async (product) => {
         try {
@@ -1386,15 +1427,9 @@ app.post('/api/bulk-translate-all', authenticateShopify, async (req, res) => {
           console.log('Digest:', translatableContentDigest);
 
           try {
-            const response = await axios.post(`https://${shop}/admin/api/2024-01/graphql.json`, {
-              query: graphqlQuery,
-              variables: variables
-      }, {
-        headers: {
-          'X-Shopify-Access-Token': accessToken,
-          'Content-Type': 'application/json'
-        }
-      });
+            // Use rate limit manager for GraphQL request
+            const responseData = await rateLimitManager.makeGraphQLRequest(graphqlQuery, variables);
+            const response = { data: responseData, status: 200 };
 
             console.log(`GraphQL response for product ${product.id}:`, response.status);
 
@@ -1487,6 +1522,13 @@ app.post('/api/bulk-translate-test', authenticateShopify, async (req, res) => {
     console.log('=== BULK TRANSLATE TEST START ===');
     console.log('Shop:', shop);
     console.log('Max Products:', maxProducts);
+    
+    // Initialize rate limit manager
+    const rateLimitManager = new RateLimitManager(shop, accessToken);
+    
+    // Check initial rate limit status
+    const initialStatus = await rateLimitManager.getRateLimitStatus();
+    console.log('📊 Initial rate limit status:', initialStatus);
 
     // Get first page only for testing
     const response = await axios.get(`https://${shop}/admin/api/2023-10/products.json`, {
@@ -1516,6 +1558,9 @@ app.post('/api/bulk-translate-test', authenticateShopify, async (req, res) => {
     for (const product of products) {
       try {
         console.log(`Processing product ${product.id}: ${product.title}`);
+        
+        // Check rate limit before processing
+        await rateLimitManager.ensureRateLimitAvailable();
         
         // Check if product has metafield
         const metafieldResponse = await axios.get(`https://${shop}/admin/api/2023-10/products/${product.id}/metafields.json`, {
@@ -1592,15 +1637,9 @@ app.post('/api/bulk-translate-test', authenticateShopify, async (req, res) => {
         console.log('Digest:', translatableContentDigest);
 
         try {
-          const response = await axios.post(`https://${shop}/admin/api/2024-01/graphql.json`, {
-            query: graphqlQuery,
-            variables: variables
-          }, {
-            headers: {
-              'X-Shopify-Access-Token': accessToken,
-              'Content-Type': 'application/json'
-            }
-          });
+          // Use rate limit manager for GraphQL request
+          const responseData = await rateLimitManager.makeGraphQLRequest(graphqlQuery, variables);
+          const response = { data: responseData, status: 200 };
 
           console.log(`GraphQL response for product ${product.id}:`, response.status);
 

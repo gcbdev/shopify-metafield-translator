@@ -709,8 +709,8 @@
             // Update product count and pagination
             if (products.length > 0) {
                 updateProductCount();
-                // Load French content for all products
-                loadFrenchContentForAllProducts();
+                // Load French content for all products - DISABLED to reduce API load
+                // loadFrenchContentForAllProducts();
             }
         }
         
@@ -1345,7 +1345,11 @@
         }
 
         // Function to view French content in modal
+        // DISABLED to reduce API load
         async function viewFrenchContent(productId) {
+            showError('French content viewing is disabled to reduce API load');
+            return;
+            
             try {
                 const product = products.find(p => p.id === productId);
                 if (!product) {
@@ -1392,7 +1396,11 @@
         }
 
         // Function to load French content for all products on the current page
+        // DISABLED to reduce API load
         async function loadFrenchContentForAllProducts() {
+            console.log('⚠️ French content checking is disabled to reduce API load');
+            return; // Early return to prevent API calls
+            
             const products = document.querySelectorAll('.product-card');
             
             for (const productCard of products) {
