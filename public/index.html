@@ -1659,14 +1659,17 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
 
         // Function to translate ALL products across all pages with auto-pagination
         async function translateAllPages() {
-            const totalProducts = parseInt(document.getElementById('total-products').textContent) || 0;
+            // Get total products - use global variable if available, otherwise try to read from element
+            const totalProductsCount = (typeof totalProducts !== 'undefined' && totalProducts > 0) 
+                ? totalProducts 
+                : (document.getElementById('total-product-count') ? parseInt(document.getElementById('total-product-count').textContent) : 0);
             
-            if (totalProducts === 0) {
+            if (totalProductsCount === 0) {
                 alert('No products found. Please load products first.');
                 return;
             }
 
-            const confirmTranslate = confirm(`🌍 TRANSLATE ALL PAGES\n\nThis will translate ALL ${totalProducts} products across ALL pages.\n\n✅ French field will be filled\n✅ English content will remain UNTOUCHED\n✅ Auto-paginates through all pages\n✅ 5 second delay between pages to avoid rate limits\n\n⏱️ Estimated time: ${Math.ceil(totalProducts / 20 * 6)} seconds\n\nAre you sure you want to proceed?`);
+            const confirmTranslate = confirm(`🌍 TRANSLATE ALL PAGES\n\nThis will translate ALL ${totalProductsCount} products across ALL pages.\n\n✅ French field will be filled\n✅ English content will remain UNTOUCHED\n✅ Auto-paginates through all pages\n✅ 5 second delay between pages to avoid rate limits\n\n⏱️ Estimated time: ${Math.ceil(totalProductsCount / 20 * 6)} seconds\n\nAre you sure you want to proceed?`);
             
             if (!confirmTranslate) return;
 
@@ -1687,7 +1690,7 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
             let totalSuccessCount = 0;
             let totalErrorCount = 0;
             let currentPage = 1;
-            let totalPages = Math.ceil(totalProducts / 20);
+            let totalPages = Math.ceil(totalProductsCount / 20);
 
             try {
                 while (currentPage <= totalPages) {
