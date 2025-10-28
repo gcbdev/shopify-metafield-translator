@@ -176,6 +176,12 @@ app.get('/api/products/count', authenticateShopify, async (req, res) => {
           console.log('No more pages found');
         }
 
+        // Add 10 second delay before fetching next page to prevent rate limiting
+        if (nextPageInfo) {
+          console.log('Waiting 10 seconds before fetching next page...');
+          await new Promise(resolve => setTimeout(resolve, 10000)); // 10 second delay
+        }
+
         // Safety check - increased limit for stores with many products
         if (pageCount > 500) {
           console.log('Safety limit reached (500 pages), stopping scan');
@@ -1320,6 +1326,12 @@ app.post('/api/bulk-translate-all', authenticateShopify, async (req, res) => {
           }
         } else {
           nextPageInfo = null;
+        }
+
+        // Add 10 second delay before fetching next page to prevent rate limiting
+        if (nextPageInfo) {
+          console.log('Waiting 10 seconds before fetching next page...');
+          await new Promise(resolve => setTimeout(resolve, 10000)); // 10 second delay
         }
 
         // Safety check - increased limit for stores with many products
