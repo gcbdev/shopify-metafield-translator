@@ -281,15 +281,15 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
       // Process products with rate limit protection
       productsWithSpecs = [];
       
-      // Process products in smaller chunks to respect rate limits
-      const chunkSize = 10; // Process 10 products at a time
+      // Process products in chunks to respect rate limits
+      const chunkSize = 20; // Process 20 products at a time (increased for better performance)
       for (let i = 0; i < products.length; i += chunkSize) {
         const chunk = products.slice(i, i + chunkSize);
         
         // Check rate limit before processing chunk
         await rateLimitManager.ensureRateLimitAvailable();
         
-        console.log(`Processing chunk ${Math.floor(i/chunkSize) + 1}/${Math.ceil(products.length/chunkSize)}`);
+        console.log(`Processing chunk ${Math.floor(i/chunkSize) + 1}/${Math.ceil(products.length/chunkSize)} (${chunk.length} products)`);
         
         // Check each product for custom.specification metafield with parallel processing
         const metafieldPromises = chunk.map(async (product) => {
@@ -331,9 +331,9 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
         const validResults = chunkResults.filter(result => result !== null);
         productsWithSpecs = [...productsWithSpecs, ...validResults];
         
-        // Small delay between chunks to avoid overwhelming the API
+        // Minimal delay between chunks (rate limit manager handles the rest)
         if (i + chunkSize < products.length) {
-          await new Promise(resolve => setTimeout(resolve, 500));
+          await new Promise(resolve => setTimeout(resolve, 100)); // Reduced from 500ms to 100ms
         }
       }
     }

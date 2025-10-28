@@ -11,6 +11,9 @@ class RateLimitManager {
     this.accessToken = accessToken;
     this.rateLimitThreshold = 50; // Wait if below 50 points available
     this.waitInterval = 1000; // Wait 1 second (50 points refill)
+    this.lastCheckTime = 0;
+    this.cachedAvailablePoints = 1000; // Cache the last known available points
+    this.cacheDuration = 2000; // Cache for 2 seconds
   }
 
   /**
@@ -18,12 +21,27 @@ class RateLimitManager {
    * @returns {Promise<void>}
    */
   async ensureRateLimitAvailable() {
-    const availablePoints = await this.getAvailableRateLimit();
+    // Use cached value if recent, otherwise fetch fresh
+    const now = Date.now();
+    const timeSinceLastCheck = now - this.lastCheckTime;
+    
+    let availablePoints;
+    if (timeSinceLastCheck < this.cacheDuration) {
+      // Use cached value
+      availablePoints = this.cachedAvailablePoints;
+    } else {
+      // Fetch fresh value
+      availablePoints = await this.getAvailableRateLimit();
+      this.cachedAvailablePoints = availablePoints;
+      this.lastCheckTime = now;
+    }
     
     if (availablePoints < this.rateLimitThreshold) {
       console.log(`⏱️ Rate limit getting low (${availablePoints} points available). Waiting ${this.waitInterval}ms...`);
       await new Promise(resolve => setTimeout(resolve, this.waitInterval));
       console.log('✅ Done waiting - continuing requests');
+      // Clear cache after waiting so next check gets fresh data
+      this.lastCheckTime = 0;
     }
   }
 
@@ -99,10 +117,13 @@ class RateLimitManager {
       }
     );
 
-    // Log rate limit info from response
+    // Log rate limit info from response and update cache
     if (response.data.extensions && response.data.extensions.cost) {
       const available = response.data.extensions.cost.throttleStatus?.currentlyAvailable || 1000;
       console.log(`📊 Rate limit after request: ${available} points available`);
+      // Update cache with fresh data
+      this.cachedAvailablePoints = available;
+      this.lastCheckTime = Date.now();
     }
 
     return response.data;
