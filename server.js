@@ -603,77 +603,20 @@ async function translateText(text, sourceLanguage, targetLanguage) {
   return await translateSingleChunk(text, sourceLanguage, targetLanguage);
 }
 
-async function translateSingleChunk(text, sourceLanguage, targetLanguage) {
-  // Skip Google Translate entirely - it's completely rate limited
-  // Use MyMemory as primary service (it's working)
+async function translateSingleChunk(text, sourceLanguage, targetLanguage, retryCount = 0) {
+  const maxRetries = 5;
+  const baseDelay = 2000; // 2 second base delay
   
   console.log(`🔤 Translating: "${text.substring(0, 80)}${text.length > 80 ? '...' : ''}" [${sourceLanguage} → ${targetLanguage}]`);
   
-  // Small delay to avoid rate limits
-  await new Promise(resolve => setTimeout(resolve, 300));
-  
-  /* DISABLED - Google Translate is rate limited */
-  const maxRetries = 3;
-  
-  // Try Google Translate first (free tier: 500,000 characters/month)
-  try {
-    console.log(`🔤 Translating: "${text.substring(0, 100)}${text.length > 100 ? '...' : ''}" [${sourceLanguage} → ${targetLanguage}]`);
-    
-    // Add delay to avoid rate limiting
-    // Start with 500ms, will increase if we hit rate limits
-    const baseDelay = 500;
-    if (retryCount === 0) {
-      console.log(`⏱️ Waiting ${baseDelay}ms before translation request...`);
-      await new Promise(resolve => setTimeout(resolve, baseDelay));
-    }
-    
-    // Google Translate API (free tier)
-    const response = await axios.post('https://translate.googleapis.com/translate_a/single', null, {
-      params: {
-        client: 'gtx',
-        sl: sourceLanguage,
-        tl: targetLanguage,
-        dt: 't',
-        q: text
-      },
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      }
-    });
-
-    if (response.data && response.data[0]) {
-      // Google Translate returns an array of translation segments
-      // Combine all segments to get the full translation
-      const translatedSegments = response.data[0]
-        .filter(segment => segment && segment[0])
-        .map(segment => segment[0])
-        .join('');
-      
-      const translatedText = translatedSegments || '';
-      
-      if (translatedText) {
-        console.log(`✅ Google Translate: ${text.length} chars → ${translatedText.length} chars`);
-        console.log(`   Preview: "${translatedText.substring(0, 100)}..."`);
-        return translatedText;
-      } else {
-        console.log(`⚠️ Google Translate: Empty translation returned`);
-      }
-    } else {
-      console.log(`⚠️ Google Translate: Unexpected response structure`);
-    }
-  } catch (error) {
-    // Handle 429 rate limit errors with retry
-    if (error.response && error.response.status === 429 && retryCount < maxRetries) {
-      const waitTime = Math.pow(2, retryCount) * 5000; // Exponential backoff: 5s, 10s, 20s
-      console.log(`⚠️ Rate limit hit (429). Waiting ${waitTime/1000}s before retry... (attempt ${retryCount + 1}/${maxRetries})`);
-      await new Promise(resolve => setTimeout(resolve, waitTime));
-      return await translateSingleChunk(text, sourceLanguage, targetLanguage, retryCount + 1);
-    } else if (error.response && error.response.status === 429) {
-      console.log(`❌ Google Translate failed after ${maxRetries} retries due to rate limiting`);
-    }
-    console.log(`❌ Google Translate failed: ${error.response?.status || ''} ${error.message}`);
+  // Progressive delay - increase with each retry
+  const waitTime = baseDelay + (retryCount * 1000);
+  if (retryCount > 0) {
+    console.log(`⏱️ Waiting ${waitTime}ms (attempt ${retryCount + 1}/${maxRetries + 1})...`);
+  } else {
+    console.log(`⏱️ Waiting ${waitTime}ms...`);
   }
-  /* End of disabled Google Translate code */
+  await new Promise(resolve => setTimeout(resolve, waitTime));
 
   // Use MyMemory as primary service
   try {
@@ -682,7 +625,7 @@ async function translateSingleChunk(text, sourceLanguage, targetLanguage) {
         q: text,
         langpair: `${sourceLanguage}|${targetLanguage}`
       },
-      timeout: 10000
+      timeout: 15000
     });
 
     if (response.data.responseStatus === 200) {
@@ -691,12 +634,18 @@ async function translateSingleChunk(text, sourceLanguage, targetLanguage) {
       return translated;
     }
   } catch (error) {
-    console.log(`❌ MyMemory failed: ${error.message}`);
+    // Handle rate limiting with retry
+    if (error.response && error.response.status === 429 && retryCount < maxRetries) {
+      console.log(`⚠️ MyMemory rate limit (429). Will retry...`);
+      return await translateSingleChunk(text, sourceLanguage, targetLanguage, retryCount + 1);
+    }
+    console.log(`❌ MyMemory failed: ${error.response?.status || ''} ${error.message}`);
   }
 
-  // Final fallback - return original text (no language tag)
-  console.log(`❌ All translation services failed for: "${text}"`);
-  console.log(`⚠️ Returning original text without translation`);
+  // Final fallback - return original text
+  if (retryCount >= maxRetries) {
+    console.log(`❌ All retries exhausted for: "${text}"`);
+  }
   return text;
 }
 
