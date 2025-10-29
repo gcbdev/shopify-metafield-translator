@@ -465,7 +465,14 @@
                 <button class="btn btn-secondary" onclick="loadPreviousPage()" id="prev-page-btn" disabled>Previous</button>
                 <span id="page-info" class="page-info">Page 1 of 1</span>
                 <button class="btn btn-secondary" onclick="loadNextPage()" id="next-page-btn" disabled>Next</button>
+                <div style="display: flex; gap: 5px; align-items: center;">
+                    <input type="number" id="page-jump-input" placeholder="Jump to page" style="width: 120px; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;" onkeypress="handlePageJump(event)" min="1">
+                    <button class="btn btn-secondary" onclick="jumpToPage()" style="min-width: 60px;">Go</button>
+                </div>
                 <button class="btn" onclick="translateToFrench()" id="translate-to-french-btn" style="background-color: #10b981; font-weight: bold;">🌍 Translate Current Page to French</button>
+                <div style="display: flex; gap: 5px; align-items: center;">
+                    <input type="number" id="start-page-input" placeholder="Start from page" style="width: 120px; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;" min="1" value="1">
+                </div>
                 <button class="btn" onclick="translateAllPages()" id="translate-all-pages-btn" style="background-color: #8b5cf6; font-weight: bold;">🚀 Translate ALL Pages (Auto-paginate)</button>
                 <button class="btn btn-secondary" onclick="refreshProductsList()" id="refresh-list-btn" style="background-color: #6b7280; font-weight: bold;">🔄 Refresh List</button>
             </div>
@@ -1190,10 +1197,10 @@
                     stopButton.style.display = 'none';
                 }
                 
-                // Hide progress container after 5 seconds
+                // Hide progress container after 10 seconds
                 setTimeout(() => {
                     progressContainer.style.display = 'none';
-                }, 5000);
+                }, 10000);
             }
         }
         
@@ -1669,7 +1676,23 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
                 return;
             }
 
-            const confirmTranslate = confirm(`🌍 TRANSLATE ALL PAGES\n\nThis will translate ALL ${totalProductsCount} products across ALL pages.\n\n✅ French field will be filled\n✅ English content will remain UNTOUCHED\n✅ Auto-paginates through all pages\n✅ 5 second delay between pages to avoid rate limits\n\n⏱️ Estimated time: ${Math.ceil(totalProductsCount / 20 * 6)} seconds\n\nAre you sure you want to proceed?`);
+            // Get starting page from input
+            const startPageInput = document.getElementById('start-page-input');
+            const startPage = parseInt(startPageInput.value) || 1;
+            const totalPages = Math.ceil(totalProductsCount / 20);
+            
+            // Validate starting page
+            if (startPage < 1) {
+                alert('Please enter a valid starting page number (1 or greater)');
+                return;
+            }
+            
+            if (startPage > totalPages) {
+                alert(`Starting page ${startPage} exceeds total pages (${totalPages}). Please enter a valid page number.`);
+                return;
+            }
+
+            const confirmTranslate = confirm(`🌍 TRANSLATE ALL PAGES\n\nStarting from page: ${startPage}\nTotal pages: ${totalPages}\nTotal products to translate: ${totalProductsCount}\n\n✅ French field will be filled\n✅ English content will remain UNTOUCHED\n✅ Auto-paginates through all pages starting from page ${startPage}\n✅ 10 second delay between pages to avoid rate limits\n\n⏱️ Estimated time: ${Math.ceil((totalPages - startPage + 1) * 6)} seconds\n\nAre you sure you want to proceed?`);
             
             if (!confirmTranslate) return;
 
@@ -1677,8 +1700,8 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
             const progressContainer = document.getElementById('progress-container');
             progressContainer.style.display = 'block';
             document.getElementById('progress-fill').style.width = '0%';
-            document.getElementById('progress-text').textContent = '0% Complete';
-            document.getElementById('progress-details').textContent = 'Starting translation of all pages...';
+            document.getElementById('progress-text').textContent = `Starting from page ${startPage}`;
+            document.getElementById('progress-details').textContent = `Starting translation from page ${startPage}...`;
 
             // Disable buttons during translation
             const allButtons = ['force-english-btn', 'translate-to-french-btn', 'translate-all-pages-btn', 'refresh-list-btn'];
@@ -1689,15 +1712,18 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
 
             let totalSuccessCount = 0;
             let totalErrorCount = 0;
-            let currentPage = 1;
-            let totalPages = Math.ceil(totalProductsCount / 20);
+            let currentPage = startPage;
 
             try {
+                const totalPagesToProcess = totalPages - startPage + 1;
+                let pagesProcessed = 0;
+                
                 while (currentPage <= totalPages) {
                     console.log(`\n=== TRANSLATING PAGE ${currentPage}/${totalPages} ===`);
+                    pagesProcessed++;
                     
-                    // Update progress
-                    const pageProgress = Math.round((currentPage / totalPages) * 100);
+                    // Update progress based on pages from start page
+                    const pageProgress = Math.round((pagesProcessed / totalPagesToProcess) * 100);
                     document.getElementById('progress-fill').style.width = pageProgress + '%';
                     document.getElementById('progress-text').textContent = `Page ${currentPage}/${totalPages}`;
                     document.getElementById('progress-details').textContent = `Translating page ${currentPage} of ${totalPages} (${totalSuccessCount} success, ${totalErrorCount} errors)...`;
@@ -1783,11 +1809,11 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
 
                     currentPage++;
 
-                    // 5 second delay before moving to next page (unless it's the last page)
+                    // 10 second delay before moving to next page (unless it's the last page)
                     if (currentPage <= totalPages) {
-                        console.log(`⏱️ Waiting 5 seconds before moving to next page...`);
-                        document.getElementById('progress-details').textContent = `Waiting 5 seconds before page ${currentPage}...`;
-                        await new Promise(resolve => setTimeout(resolve, 5000));
+                        console.log(`⏱️ Waiting 10 seconds before moving to next page...`);
+                        document.getElementById('progress-details').textContent = `Waiting 10 seconds before page ${currentPage}...`;
+                        await new Promise(resolve => setTimeout(resolve, 10000));
                     }
                 }
 
@@ -1815,11 +1841,11 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
                     if (btn) btn.disabled = false;
                 });
 
-                // Hide progress after 5 seconds
+                // Hide progress after 10 seconds
                 setTimeout(() => {
                     const progressContainer = document.getElementById('progress-container');
                     if (progressContainer) progressContainer.style.display = 'none';
-                }, 5000);
+                }, 10000);
             }
         }
 

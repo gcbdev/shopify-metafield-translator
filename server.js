@@ -176,12 +176,6 @@ app.get('/api/products/count', authenticateShopify, async (req, res) => {
           console.log('No more pages found');
         }
 
-        // Add 10 second delay before fetching next page to prevent rate limiting
-        if (nextPageInfo) {
-          console.log('Waiting 10 seconds before fetching next page...');
-          await new Promise(resolve => setTimeout(resolve, 10000)); // 10 second delay
-        }
-
         // Safety check - increased limit for stores with many products
         if (pageCount > 500) {
           console.log('Safety limit reached (500 pages), stopping scan');
@@ -481,7 +475,7 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
 
 // Translation service using multiple free APIs
 async function translateText(text, sourceLanguage, targetLanguage) {
-  // Try Google Translate first (free tier: 500,000 characters/month - check console logs if you hit this limit)
+  // Try Google Translate first (free tier: 500,000 characters/month)
   try {
     console.log(`Translating "${text}" from ${sourceLanguage} to ${targetLanguage}`);
     
@@ -496,8 +490,7 @@ async function translateText(text, sourceLanguage, targetLanguage) {
       },
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      },
-      timeout: 30000 // 30 second timeout for slow services
+      }
     });
 
     if (response.data && response.data[0] && response.data[0][0]) {
@@ -506,7 +499,7 @@ async function translateText(text, sourceLanguage, targetLanguage) {
       return translatedText;
     }
   } catch (error) {
-    console.log(`⚠️ Google Translate failed: ${error.message}, trying LibreTranslate...`);
+    console.log('Google Translate failed, trying LibreTranslate...');
   }
 
   // Fallback to LibreTranslate (completely free)
@@ -519,8 +512,7 @@ async function translateText(text, sourceLanguage, targetLanguage) {
     }, {
       headers: {
         'Content-Type': 'application/json'
-      },
-      timeout: 30000 // 30 second timeout
+      }
     });
 
     if (response.data && response.data.translatedText) {
@@ -528,7 +520,7 @@ async function translateText(text, sourceLanguage, targetLanguage) {
       return response.data.translatedText;
     }
   } catch (error) {
-    console.log(`⚠️ LibreTranslate failed: ${error.message}, trying MyMemory...`);
+    console.log('LibreTranslate failed, trying MyMemory...');
   }
 
   // Fallback to MyMemory
@@ -537,8 +529,7 @@ async function translateText(text, sourceLanguage, targetLanguage) {
       params: {
         q: text,
         langpair: `${sourceLanguage}|${targetLanguage}`
-      },
-      timeout: 30000 // 30 second timeout
+      }
     });
 
     if (response.data.responseStatus === 200) {
@@ -546,7 +537,7 @@ async function translateText(text, sourceLanguage, targetLanguage) {
       return response.data.responseData.translatedText;
     }
   } catch (error) {
-    console.log(`⚠️ MyMemory failed: ${error.message}, using fallback...`);
+    console.log('MyMemory failed, using fallback...');
   }
 
   // Final fallback - return original text (no language tag)
@@ -1328,12 +1319,6 @@ app.post('/api/bulk-translate-all', authenticateShopify, async (req, res) => {
           nextPageInfo = null;
         }
 
-        // Add 10 second delay before fetching next page to prevent rate limiting
-        if (nextPageInfo) {
-          console.log('Waiting 10 seconds before fetching next page...');
-          await new Promise(resolve => setTimeout(resolve, 10000)); // 10 second delay
-        }
-
         // Safety check - increased limit for stores with many products
         if (allProducts.length > 50000) {
           console.log('Safety limit reached (50,000 products), stopping fetch');
@@ -1479,53 +1464,6 @@ app.post('/api/bulk-translate-all', authenticateShopify, async (req, res) => {
 
         } catch (error) {
           console.error(`Error translating product ${product.id}:`, error.message);
-          
-          // Retry once with a delay
-          try {
-            console.log(`🔄 Retrying translation for product ${product.id}...`);
-            await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
-            
-            const metafieldResponse = await axios.get(`https://${shop}/admin/api/2023-10/products/${product.id}/metafields.json`, {
-              headers: { 'X-Shopify-Access-Token': accessToken, 'Content-Type': 'application/json' },
-              params: { namespace: 'custom', key: 'specification' }
-            });
-
-            if (metafieldResponse.data.metafields.length > 0) {
-              const metafield = metafieldResponse.data.metafields[0];
-              const jsonContent = JSON.parse(metafield.value);
-              
-              const englishContent = await translateJsonContent(jsonContent, sourceLanguage, 'en');
-              const frenchContent = await translateJsonContent(englishContent, 'en', 'fr');
-              
-              const crypto = require('crypto');
-              const originalMetafieldValue = metafield.value;
-              const translatableContentDigest = crypto.createHash('sha256').update(originalMetafieldValue).digest('hex');
-              
-              const retryGraphqlQuery = `
-                mutation CreateTranslation($id: ID!, $translations: [TranslationInput!]!) {
-                  translationsRegister(resourceId: $id, translations: $translations) {
-                    userErrors { message field }
-                    translations { locale key value }
-                  }
-                }
-              `;
-              
-              const variables = {
-                id: `gid://shopify/Metafield/${metafield.id}`,
-                translations: [{ key: "value", value: JSON.stringify(frenchContent), locale: "fr", translatableContentDigest: translatableContentDigest }]
-              };
-              
-              const responseData = await rateLimitManager.makeGraphQLRequest(retryGraphqlQuery, variables);
-              
-              if (responseData.data?.translationsRegister?.translations?.length > 0) {
-                console.log(`✅ Retry successful for product ${product.id}`);
-                return { productId: product.id, status: 'success', title: product.title, translation: responseData.data.translationsRegister.translations[0] };
-              }
-            }
-          } catch (retryError) {
-            console.error(`Retry failed for product ${product.id}:`, retryError.message);
-          }
-          
           return { productId: product.id, status: 'error', reason: error.message, title: product.title };
         }
       });
