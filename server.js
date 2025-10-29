@@ -605,14 +605,14 @@ async function translateText(text, sourceLanguage, targetLanguage) {
 }
 
 async function translateSingleChunk(text, sourceLanguage, targetLanguage, retryCount = 0) {
-  const maxRetries = 2; // Reduced from 5 to 2
-  const baseDelay = 300; // Reduced from 2000 to 300ms
+  const maxRetries = 1; // Only 1 retry to avoid wasting time
+  const baseDelay = 5000; // Increased to 5 seconds to avoid rate limits
   const shortTextThreshold = 500; // Use MyMemory for short, Google for long
   
   console.log(`🔤 Translating: "${text.substring(0, 80)}${text.length > 80 ? '...' : ''}" [${sourceLanguage} → ${targetLanguage}]`);
   
   // Progressive delay - increase with each retry
-  const waitTime = baseDelay + (retryCount * 500); // Reduced from 1000 to 500
+  const waitTime = baseDelay + (retryCount * 2000); // Base + increasing retry delays
   if (retryCount > 0) {
     console.log(`⏱️ Waiting ${waitTime}ms (attempt ${retryCount + 1}/${maxRetries + 1})...`);
   } else {
