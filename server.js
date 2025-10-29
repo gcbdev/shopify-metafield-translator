@@ -691,8 +691,72 @@ async function translateSingleChunk(text, sourceLanguage, targetLanguage, retryC
       return await translateSingleChunk(text, sourceLanguage, targetLanguage, retryCount + 1);
     }
   }
+  } else {
+    // SHORT TEXT (<500 chars): Use MyMemory first (faster, more reliable)
+    console.log(`📏 Short text detected (${text.length} chars) - using MyMemory first...`);
+    
+    try {
+      const response = await axios.get('https://api.mymemory.translated.net/get', {
+        params: {
+          q: text,
+          langpair: `${sourceLanguage}|${targetLanguage}`
+        },
+        timeout: 15000
+      });
 
-  // Final fallback to MyMemory
+      if (response.data.responseStatus === 200) {
+        const translated = response.data.responseData.translatedText;
+        console.log(`✅ MyMemory: ${text.length} → ${translated.length} chars`);
+        return translated;
+      }
+    } catch (memError) {
+      console.log(`❌ MyMemory failed: ${memError.response?.status || ''} ${memError.message}`);
+      
+      // If MyMemory fails, try Google Translate as fallback
+      if (!(memError.response && memError.response.status === 429)) {
+        console.log(`⚠️ Trying Google Translate as fallback...`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        try {
+          const googleResponse = await axios.post('https://translate.googleapis.com/translate_a/single', null, {
+            params: {
+              client: 'gtx',
+              sl: sourceLanguage,
+              tl: targetLanguage,
+              dt: 't',
+              q: text
+            },
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            },
+            timeout: 20000
+          });
+          
+          if (googleResponse.data && googleResponse.data[0]) {
+            const translatedSegments = googleResponse.data[0]
+              .filter(segment => segment && segment[0])
+              .map(segment => segment[0])
+              .join('');
+            
+            if (translatedSegments && translatedSegments !== text) {
+              console.log(`✅ Google Translate fallback: ${text.length} → ${translatedSegments.length} chars`);
+              return translatedSegments;
+            }
+          }
+        } catch (googleError) {
+          console.log(`❌ Google Translate fallback failed: ${googleError.message}`);
+        }
+      }
+      
+      // Handle rate limiting with retry
+      if (memError.response && memError.response.status === 429 && retryCount < maxRetries) {
+        console.log(`⚠️ Rate limit hit. Will retry...`);
+        return await translateSingleChunk(text, sourceLanguage, targetLanguage, retryCount + 1);
+      }
+    }
+  }
+
+  // Final fallback
   try {
     console.log(`⚠️ Trying MyMemory as last resort...`);
     await new Promise(resolve => setTimeout(resolve, 1000));
