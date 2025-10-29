@@ -607,6 +607,7 @@ async function translateText(text, sourceLanguage, targetLanguage) {
 async function translateSingleChunk(text, sourceLanguage, targetLanguage, retryCount = 0) {
   const maxRetries = 5;
   const baseDelay = 2000; // 2 second base delay
+  const shortTextThreshold = 500; // Use MyMemory for short, Google for long
   
   console.log(`🔤 Translating: "${text.substring(0, 80)}${text.length > 80 ? '...' : ''}" [${sourceLanguage} → ${targetLanguage}]`);
   
@@ -619,8 +620,83 @@ async function translateSingleChunk(text, sourceLanguage, targetLanguage, retryC
   }
   await new Promise(resolve => setTimeout(resolve, waitTime));
 
-  // Use MyMemory as primary service
+  // For LONG texts (>500 chars): Use Google Translate FIRST (best for long HTML content)
+  // For SHORT texts (<500 chars): Use MyMemory first (faster, more reliable)
+  
+  const isLongText = text.length > shortTextThreshold;
+  
+  if (isLongText) {
+    console.log(`📏 Long text detected (${text.length} chars) - using Google Translate first...`);
+    
+    // Try Google Translate FIRST for long texts
+    try {
+    const googleResponse = await axios.post('https://translate.googleapis.com/translate_a/single', null, {
+      params: {
+        client: 'gtx',
+        sl: sourceLanguage,
+        tl: targetLanguage,
+        dt: 't',
+        q: text
+      },
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      },
+      timeout: 20000
+    });
+    
+    if (googleResponse.data && googleResponse.data[0]) {
+      const translatedSegments = googleResponse.data[0]
+        .filter(segment => segment && segment[0])
+        .map(segment => segment[0])
+        .join('');
+      
+      if (translatedSegments && translatedSegments !== text) {
+        console.log(`✅ Google Translate: ${text.length} → ${translatedSegments.length} chars`);
+        return translatedSegments;
+      }
+    }
+  } catch (googleError) {
+    console.log(`❌ Google Translate failed: ${googleError.response?.status || ''} ${googleError.message}`);
+    
+    // If Google fails with 429 (rate limit), continue to fallback
+    if (!(googleError.response && googleError.response.status === 429)) {
+      console.log(`⚠️ Trying MyMemory as fallback...`);
+      
+      // Wait a bit before trying another service
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Try MyMemory as fallback
+      try {
+        const response = await axios.get('https://api.mymemory.translated.net/get', {
+          params: {
+            q: text,
+            langpair: `${sourceLanguage}|${targetLanguage}`
+          },
+          timeout: 15000
+        });
+
+        if (response.data.responseStatus === 200) {
+          const translated = response.data.responseData.translatedText;
+          console.log(`✅ MyMemory fallback: ${text.length} → ${translated.length} chars`);
+          return translated;
+        }
+      } catch (memError) {
+        console.log(`❌ MyMemory fallback failed: ${memError.message}`);
+      }
+    }
+    
+    // Handle rate limiting with retry
+    if (googleError.response && googleError.response.status === 429 && retryCount < maxRetries) {
+      console.log(`⚠️ Rate limit hit. Will retry...`);
+      return await translateSingleChunk(text, sourceLanguage, targetLanguage, retryCount + 1);
+    }
+  }
+
+  // Final fallback to MyMemory
   try {
+    console.log(`⚠️ Trying MyMemory as last resort...`);
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
     const response = await axios.get('https://api.mymemory.translated.net/get', {
       params: {
         q: text,
@@ -632,71 +708,6 @@ async function translateSingleChunk(text, sourceLanguage, targetLanguage, retryC
     if (response.data.responseStatus === 200) {
       const translated = response.data.responseData.translatedText;
       console.log(`✅ MyMemory: ${text.length} → ${translated.length} chars`);
-      
-      // Check if MyMemory returned the original (happens with long HTML)
-      if (translated === text) {
-        console.log(`⚠️ MyMemory returned identical text - trying LibreTranslate fallback...`);
-        // Wait a bit before trying another service
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        // Try LibreTranslate as fallback for long texts
-        try {
-          const libretranslateResponse = await axios.post('https://translate.fortytwo-it.com/translate', {
-            q: text,
-            source: sourceLanguage,
-            target: targetLanguage,
-            format: 'text'
-          }, {
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            timeout: 20000
-          });
-          
-          if (libretranslateResponse.data && libretranslateResponse.data.translatedText) {
-            console.log(`✅ LibreTranslate fallback: ${text.length} → ${libretranslateResponse.data.translatedText.length} chars`);
-            return libretranslateResponse.data.translatedText;
-          }
-        } catch (libreError) {
-          console.log(`❌ LibreTranslate fallback failed: ${libreError.message}`);
-        }
-        
-        // Try Google Translate as second fallback
-        try {
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          
-          const googleResponse = await axios.post('https://translate.googleapis.com/translate_a/single', null, {
-            params: {
-              client: 'gtx',
-              sl: sourceLanguage,
-              tl: targetLanguage,
-              dt: 't',
-              q: text
-            },
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            },
-            timeout: 15000
-          });
-          
-          if (googleResponse.data && googleResponse.data[0]) {
-            const translatedSegments = googleResponse.data[0]
-              .filter(segment => segment && segment[0])
-              .map(segment => segment[0])
-              .join('');
-            
-            if (translatedSegments && translatedSegments !== text) {
-              console.log(`✅ Google Translate fallback: ${text.length} → ${translatedSegments.length} chars`);
-              return translatedSegments;
-            }
-          }
-        } catch (googleError) {
-          console.log(`❌ Google Translate fallback failed: ${googleError.message}`);
-        }
-        
-        return text; // Return original if all fail
-      }
-      
       return translated;
     }
   } catch (error) {
