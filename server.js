@@ -554,7 +554,8 @@ async function translateText(text, sourceLanguage, targetLanguage) {
           console.error(`⚠️ Chunk ${i + 1} returned empty translation. Using original.`);
           translatedChunks.push(textChunks[i]); // Use original if translation fails
         } else if (translatedChunk === textChunks[i]) {
-          console.log(`⚠️ Chunk ${i + 1} unchanged (might be already in target language)`);
+          console.log(`⚠️ Chunk ${i + 1} unchanged - MyMemory may have returned original text`);
+          console.log(`   This usually happens with long HTML content. Will keep original.`);
           translatedChunks.push(translatedChunk);
         } else {
           console.log(`✅ Chunk ${i + 1} translated: ${textChunks[i].length} → ${translatedChunk.length} chars`);
@@ -631,6 +632,71 @@ async function translateSingleChunk(text, sourceLanguage, targetLanguage, retryC
     if (response.data.responseStatus === 200) {
       const translated = response.data.responseData.translatedText;
       console.log(`✅ MyMemory: ${text.length} → ${translated.length} chars`);
+      
+      // Check if MyMemory returned the original (happens with long HTML)
+      if (translated === text) {
+        console.log(`⚠️ MyMemory returned identical text - trying LibreTranslate fallback...`);
+        // Wait a bit before trying another service
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Try LibreTranslate as fallback for long texts
+        try {
+          const libretranslateResponse = await axios.post('https://translate.fortytwo-it.com/translate', {
+            q: text,
+            source: sourceLanguage,
+            target: targetLanguage,
+            format: 'text'
+          }, {
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            timeout: 20000
+          });
+          
+          if (libretranslateResponse.data && libretranslateResponse.data.translatedText) {
+            console.log(`✅ LibreTranslate fallback: ${text.length} → ${libretranslateResponse.data.translatedText.length} chars`);
+            return libretranslateResponse.data.translatedText;
+          }
+        } catch (libreError) {
+          console.log(`❌ LibreTranslate fallback failed: ${libreError.message}`);
+        }
+        
+        // Try Google Translate as second fallback
+        try {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          const googleResponse = await axios.post('https://translate.googleapis.com/translate_a/single', null, {
+            params: {
+              client: 'gtx',
+              sl: sourceLanguage,
+              tl: targetLanguage,
+              dt: 't',
+              q: text
+            },
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            },
+            timeout: 15000
+          });
+          
+          if (googleResponse.data && googleResponse.data[0]) {
+            const translatedSegments = googleResponse.data[0]
+              .filter(segment => segment && segment[0])
+              .map(segment => segment[0])
+              .join('');
+            
+            if (translatedSegments && translatedSegments !== text) {
+              console.log(`✅ Google Translate fallback: ${text.length} → ${translatedSegments.length} chars`);
+              return translatedSegments;
+            }
+          }
+        } catch (googleError) {
+          console.log(`❌ Google Translate fallback failed: ${googleError.message}`);
+        }
+        
+        return text; // Return original if all fail
+      }
+      
       return translated;
     }
   } catch (error) {
