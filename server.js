@@ -595,7 +595,7 @@ async function translateText(text, sourceLanguage, targetLanguage) {
 async function translateSingleChunk(text, sourceLanguage, targetLanguage) {
   // Try Google Translate first (free tier: 500,000 characters/month)
   try {
-    console.log(`Translating chunk "${text.substring(0, 100)}..." from ${sourceLanguage} to ${targetLanguage}`);
+    console.log(`🔤 Translating: "${text.substring(0, 100)}${text.length > 100 ? '...' : ''}" [${sourceLanguage} → ${targetLanguage}]`);
     
     // Google Translate API (free tier)
     const response = await axios.post('https://translate.googleapis.com/translate_a/single', null, {
@@ -607,17 +607,19 @@ async function translateSingleChunk(text, sourceLanguage, targetLanguage) {
         q: text
       },
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        'User-Agent': 'Mozilla/ Ethan Middleton/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
       }
     });
 
     if (response.data && response.data[0] && response.data[0][0]) {
       const translatedText = response.data[0][0][0];
-      console.log(`✅ Google Translate: chunk translated`);
+      console.log(`✅ Google Translate: "${text}" → "${translatedText}"`);
       return translatedText;
+    } else {
+      console.log(`⚠️ Google Translate: Unexpected response structure`);
     }
   } catch (error) {
-    console.log('Google Translate failed, trying LibreTranslate...');
+    console.log(`❌ Google Translate failed: ${error.message}`);
   }
 
   // Fallback to LibreTranslate (completely free)
@@ -668,35 +670,37 @@ async function translateSingleChunk(text, sourceLanguage, targetLanguage) {
 function isLikelyFrench(text) {
   if (typeof text !== 'string') return false;
   
-  const frenchIndicators = [
-    // Common French words
-    'de', 'du', 'des', 'le', 'la', 'les', 'et', 'ou', 'pour', 'avec', 'sur', 'dans', 'par', 
-    'est', 'sont', 'couleur', 'couleurs', 'disponible', 'montage', 'filetage', 'augmentation', 
-    'spécifications', 'marque', 'matériel', 'tapé', 'fluid', 'hauteur', 'charge', 'maximale',
-    'degrés', 'plate', 'type', 'fonctionnalités', 'supplémentaires', 'général',
-    // French accents
-    'é', 'è', 'ê', 'ë', 'à', 'â', 'ù', 'û', 'ü', 'î', 'ï', 'ô', 'ö', 'ç',
-    // French phrases
-    'pouce', 'fluid', 'système', 'compteur', 'tecnologie', 'pan', 'tilt', 'balance', 'base', 'plaque'
-  ];
-  
   const lowerText = text.toLowerCase();
   
-  // Check for French words
-  if (frenchIndicators.some(word => lowerText.includes(word))) {
+  // First, check for French accents - most reliable indicator
+  if (/[àáâãäåæçèéêëìíîïðñòóôõöî]/i.test(text)) {
     return true;
   }
   
-  // Check for French accents
-  if (/[àáâãäåæçèéêëìíîïðñòóôõö]/i.test(text)) {
-    return true;
+  // Check for multiple French-specific words (to avoid false positives)
+  const frenchWords = ['des', 'les', 'pour', 'avec', 'spécifications', 'marque', 'couleur', 'montage', 
+                       'matériel', 'général', 'généralités', 'caractéristiques', 'fonctionnalités', 
+                       'supplémentaires', 'disponible', 'filtre', 'opération'];
+  
+  let frenchWordCount = 0;
+  for (const word of frenchWords) {
+    if (lowerText.includes(word)) {
+      frenchWordCount++;
+      // If we find 2 or more French words, it's likely French
+      if (frenchWordCount >= 2) {
+        return true;
+      }
+    }
   }
   
-  // Check for common French patterns
-  if (lowerText.includes('kg)') || lowerText.includes('cm)') || lowerText.includes('montage') || 
-      lowerText.includes('matériel') || lowerText.includes('général') || 
-      lowerText.includes('fications') || lowerText.includes('aluminium')) {
-    return true;
+  // Check for very specific French phrases that are unique
+  const uniqueFrenchPhrases = ['table des matières', 'généralités', 'caractéristiques physiques', 
+                               'caractéristiques techniques', 'spécifications cachées'];
+  
+  for (const phrase of uniqueFrenchPhrases) {
+    if (lowerText.includes(phrase)) {
+      return true;
+    }
   }
   
   return false;
@@ -731,26 +735,22 @@ async function translateJsonContent(jsonContent, sourceLanguage, targetLanguage)
       return jsonContent;
     }
     
-    // Check if text is already in target language
-    if (targetLanguage === 'fr' && isLikelyFrench(jsonContent)) {
-      console.log(`✓ Text already in French: "${jsonContent.substring(0, 80)}..."`);
-      return jsonContent; // Already in French, don't translate
-    }
-    
-    // Check if source language is different from detected language
-    if (sourceLanguage === 'en' && isLikelyFrench(jsonContent)) {
-      console.log(`⚠️ Detected French content with English source. Translating anyway: "${jsonContent.substring(0, 80)}..."`);
-    }
+    // REMOVED French detection for text values - translate everything
+    // This ensures all English text gets translated even if mixed with some French words
     
     console.log(`→ Translating text: "${jsonContent.substring(0, 80)}..."`);
     const translatedText = await translateText(jsonContent, sourceLanguage, targetLanguage);
     console.log(`→ Translated to: "${translatedText.substring(0, 80)}..."`);
     return translatedText;
   } else if (Array.isArray(jsonContent)) {
+    console.log(`📋 Translating array with ${jsonContent.length} items...`);
     const translatedArray = await Promise.all(
-      jsonContent.map(item => translateJsonContent(item, sourceLanguage, targetLanguage))
+      jsonContent.map((item, index) => {
+        console.log(`   [${index}] Translating array item:`, typeof item === 'string' ? `"${item.substring(0, 50)}..."` : '[Object/Array]');
+        return translateJsonContent(item, sourceLanguage, targetLanguage);
+      })
     );
-    console.log(`📋 Translated array: ${translatedArray.length} items`);
+    console.log(`📋 Translated ${translatedArray.length} items in array`);
     return translatedArray;
   } else if (jsonContent && typeof jsonContent === 'object') {
     console.log(`\n📦 Starting to translate object with ${Object.keys(jsonContent).length} keys...`);
@@ -768,37 +768,39 @@ async function translateJsonContent(jsonContent, sourceLanguage, targetLanguage)
         translated[key] = value;
         console.log(`⏭️ Skipped technical field: ${key}`);
       } else {
-        // ALWAYS try to translate keys unless they're very clearly technical
-        // This ensures English keys get translated even in mixed-language JSON
-        let translatedKey = key;
-        
-        // More aggressive: only skip if it's clearly technical or already definitely French
+        // Check if it's clearly technical (ONLY skip these)
         const isTechnical = key.toLowerCase().includes('id') || 
                            key.toLowerCase().includes('sku') ||
                            key.toLowerCase().includes('barcode') ||
                            /^[a-z]$/i.test(key) || // Single letter
                            /^[\d\s]+$/.test(key);  // Numbers only
         
-        const isDefinitelyFrench = targetLanguage === 'fr' && isLikelyFrench(key);
-        
-        if (!isTechnical && !isDefinitelyFrench) {
+        if (isTechnical) {
+          translated[key] = value;
+          console.log(`⏭️ Skipping technical key: "${key}"`);
+        } else {
+          // TRANSLATE ALL OTHER KEYS - no French detection
           console.log(`→ Translating key: "${key}" →`);
+          let translatedKey = key;
+          
           try {
             translatedKey = await translateText(key, sourceLanguage, targetLanguage);
             console.log(`   Result: "${translatedKey}"`);
+            
+            if (translatedKey === key) {
+              console.log(`⚠️ Translation returned same value for "${key}"`);
+            }
           } catch (error) {
-            console.log(`⚠️ Key translation failed, keeping original: ${key}`);
+            console.log(`❌ Translation failed for "${key}", keeping original`);
             translatedKey = key;
           }
-        } else if (isDefinitelyFrench) {
-          console.log(`✓ Key already in French: "${key}"`);
+          
+          // Translate the value recursively
+          console.log(`   Translating value...`);
+          const translatedValue = await translateJsonContent(value, sourceLanguage, targetLanguage);
+          
+          translated[translatedKey] = translatedValue;
         }
-        
-        // Translate the value recursively (this will handle nested objects and arrays)
-        console.log(`   Translating value for key "${translatedKey}"...`);
-        const translatedValue = await translateJsonContent(value, sourceLanguage, targetLanguage);
-        
-        translated[translatedKey] = translatedValue;
       }
     }
     
