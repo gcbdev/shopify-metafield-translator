@@ -566,10 +566,11 @@ async function translateText(text, sourceLanguage, targetLanguage) {
         translatedChunks.push(textChunks[i]); // Use original if translation fails
       }
       
-      // Delay between chunks to ensure complete translation and avoid rate limits
+      // Delay between chunks - reduced to avoid timeouts
       if (i < textChunks.length - 1) {
-        console.log(`⏱️ Waiting 300ms before next chunk...`);
-        await new Promise(resolve => setTimeout(resolve, 300));
+        const chunkDelay = parseInt(process.env.TRANSLATION_CHUNK_DELAY) || 200;
+        console.log(`⏱️ Waiting ${chunkDelay}ms before next chunk...`);
+        await new Promise(resolve => setTimeout(resolve, chunkDelay));
       }
     }
     
@@ -606,19 +607,85 @@ async function translateText(text, sourceLanguage, targetLanguage) {
 
 async function translateSingleChunk(text, sourceLanguage, targetLanguage, retryCount = 0) {
   const maxRetries = 1; // Only 1 retry to avoid wasting time
-  const baseDelay = 5000; // Increased to 5 seconds to avoid rate limits
-  const shortTextThreshold = 500; // Use MyMemory for short, Google for long
+  // Configurable delay - reduced from 5s to 1s by default, configurable via env
+  const baseDelay = parseInt(process.env.TRANSLATION_DELAY) || 1000;
+  const shortTextThreshold = 500; // Use free services (MyMemory/Yandex/Google) for short, Google for long
+  // Yandex API credentials (hardcoded for now, can be overridden via env vars)
+  const yandexApiKey = process.env.YANDEX_API_KEY || 'AQVNytwIR5D0Njp54CNXOaTQ-J3qQkj2lcLpc6Bu';
+  const yandexFolderId = process.env.YANDEX_FOLDER_ID || 'b1gn8gj1pk8hilk34vt1';
+  const primaryService = process.env.PRIMARY_TRANSLATION_SERVICE || 'auto';
   
   console.log(`🔤 Translating: "${text.substring(0, 80)}${text.length > 80 ? '...' : ''}" [${sourceLanguage} → ${targetLanguage}]`);
   
-  // Progressive delay - increase with each retry
-  const waitTime = baseDelay + (retryCount * 2000); // Base + increasing retry delays
-  if (retryCount > 0) {
-    console.log(`⏱️ Waiting ${waitTime}ms (attempt ${retryCount + 1}/${maxRetries + 1})...`);
-  } else {
-    console.log(`⏱️ Waiting ${waitTime}ms...`);
+  // Try Yandex Translate FIRST if API key is provided (free tier: 10M chars/day, no credit card required)
+  if (yandexApiKey && yandexFolderId && (primaryService === 'yandex' || primaryService === 'auto')) {
+    try {
+      console.log(`🌐 Trying Yandex Translate (free, 10M chars/day)...`);
+      
+      // Yandex language code mapping
+      const yandexLangMap = {
+        'en': 'en', 'fr': 'fr', 'es': 'es', 'de': 'de', 'it': 'it', 'pt': 'pt',
+        'ru': 'ru', 'ja': 'ja', 'zh': 'zh', 'ko': 'ko', 'nl': 'nl', 'pl': 'pl'
+      };
+      
+      const yandexTarget = yandexLangMap[targetLanguage.toLowerCase()] || targetLanguage.toLowerCase();
+      const yandexSource = sourceLanguage ? (yandexLangMap[sourceLanguage.toLowerCase()] || sourceLanguage.toLowerCase()) : '';
+      
+      const yandexParams = {
+        folderId: yandexFolderId,
+        texts: [text],
+        targetLanguageCode: yandexTarget
+      };
+      
+      if (yandexSource) {
+        yandexParams.sourceLanguageCode = yandexSource;
+      }
+      
+      const yandexResponse = await axios.post(
+        'https://translate.api.cloud.yandex.net/translate/v2/translate',
+        yandexParams,
+        {
+          headers: {
+            'Authorization': `Api-Key ${yandexApiKey}`,
+            'Content-Type': 'application/json'
+          },
+          timeout: 8000 // 8 second timeout for Yandex
+        }
+      );
+      
+      if (yandexResponse.data && yandexResponse.data.translations && yandexResponse.data.translations.length > 0) {
+        const translated = yandexResponse.data.translations[0].text;
+        if (translated && translated !== text) {
+          console.log(`✅ Yandex Translate: ${text.length} → ${translated.length} chars`);
+          return translated;
+        }
+      }
+    } catch (yandexError) {
+      const status = yandexError.response?.status;
+      if (status === 429) {
+        console.log(`⚠️ Yandex Translate rate limit exceeded (10M chars/day limit reached). Using fallback services...`);
+      } else if (status === 403) {
+        console.log(`❌ Yandex Translate access forbidden. Check API key and folder ID. Using fallback services...`);
+      } else {
+        console.log(`❌ Yandex Translate failed: ${status || ''} ${yandexError.message}. Using fallback services...`);
+      }
+      // Continue to fallback services
+    }
   }
-  await new Promise(resolve => setTimeout(resolve, waitTime));
+  
+  // Only add delay if we're retrying or if using free services (Yandex skips initial delay for faster translations)
+  // Prioritize Yandex: if credentials exist and primaryService is 'auto' or 'yandex', treat as premium service
+  const hasYandex = yandexApiKey && yandexFolderId && (primaryService === 'auto' || primaryService === 'yandex');
+  const hasPremiumService = hasYandex;
+  const waitTime = retryCount > 0 ? (baseDelay + (retryCount * 1000)) : (hasPremiumService ? 0 : baseDelay);
+  if (waitTime > 0) {
+    if (retryCount > 0) {
+      console.log(`⏱️ Waiting ${waitTime}ms (attempt ${retryCount + 1}/${maxRetries + 1})...`);
+    } else {
+      console.log(`⏱️ Waiting ${waitTime}ms...`);
+    }
+    await new Promise(resolve => setTimeout(resolve, waitTime));
+  }
 
   // For LONG texts (>500 chars): Use Google Translate FIRST (best for long HTML content)
   // For SHORT texts (<500 chars): Use MyMemory first (faster, more reliable)

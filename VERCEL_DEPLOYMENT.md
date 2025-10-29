@@ -33,6 +33,18 @@
    vercel env add SESSION_SECRET
    # Enter: your-random-session-secret-here
    
+   # Optional: Yandex Translate (FREE - recommended, no credit card, 10M chars/day)
+   # See YANDEX_API_SETUP.md for detailed setup instructions
+   vercel env add YANDEX_API_KEY
+   # Enter: your-yandex-api-key (from Yandex Cloud console)
+   
+   vercel env add YANDEX_FOLDER_ID
+   # Enter: your-yandex-folder-id (from Yandex Cloud console)
+   
+   vercel env add PRIMARY_TRANSLATION_SERVICE
+   # Enter: auto (uses Yandex if configured, otherwise free services)
+   
+   # Legacy translation settings (optional, still supported)
    vercel env add TRANSLATION_API_KEY
    # Enter: your-translation-api-key
    
@@ -69,6 +81,14 @@
      SHOPIFY_API_SECRET = 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
      SHOPIFY_SCOPES = read_products,write_products,read_product_listings,write_product_listings
      SESSION_SECRET = your-random-session-secret-here
+     
+     # Optional: Yandex Translate (FREE - recommended)
+     # See YANDEX_API_SETUP.md for setup instructions
+     YANDEX_API_KEY = your-yandex-api-key
+     YANDEX_FOLDER_ID = your-yandex-folder-id
+     PRIMARY_TRANSLATION_SERVICE = auto
+     
+     # Legacy (optional)
      TRANSLATION_API_KEY = your-translation-api-key
      TRANSLATION_SERVICE = google
      ```
@@ -107,8 +127,10 @@ vercel dev
 
 1. **"Function timeout" errors:**
    - Vercel has a 10-second timeout for hobby plans
-   - Consider upgrading to Pro for longer timeouts
-   - Optimize your translation calls
+   - **Fixed**: Reduced delays from 5s to 1s default
+   - **Fixed**: Yandex API skips initial delay for faster translations
+   - Consider upgrading to Pro for longer timeouts (60s)
+   - **Recommendation**: Use Yandex Translate API (free, faster than free alternatives)
 
 2. **Environment variables not working:**
    - Make sure you've added them in Vercel dashboard
