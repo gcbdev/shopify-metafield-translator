@@ -603,10 +603,18 @@ async function translateText(text, sourceLanguage, targetLanguage) {
   return await translateSingleChunk(text, sourceLanguage, targetLanguage);
 }
 
-async function translateSingleChunk(text, sourceLanguage, targetLanguage) {
+async function translateSingleChunk(text, sourceLanguage, targetLanguage, retryCount = 0) {
+  const maxRetries = 3;
+  
   // Try Google Translate first (free tier: 500,000 characters/month)
   try {
     console.log(`🔤 Translating: "${text.substring(0, 100)}${text.length > 100 ? '...' : ''}" [${sourceLanguage} → ${targetLanguage}]`);
+    
+    // Add delay to avoid rate limiting
+    if (retryCount === 0) {
+      console.log(`⏱️ Waiting 2000ms before translation request...`);
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
     
     // Google Translate API (free tier)
     const response = await axios.post('https://translate.googleapis.com/translate_a/single', null, {
@@ -618,7 +626,7 @@ async function translateSingleChunk(text, sourceLanguage, targetLanguage) {
         q: text
       },
       headers: {
-        'User-Agent': 'Mozilla/ Ethan Middleton/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
       }
     });
 
@@ -643,7 +651,16 @@ async function translateSingleChunk(text, sourceLanguage, targetLanguage) {
       console.log(`⚠️ Google Translate: Unexpected response structure`);
     }
   } catch (error) {
-    console.log(`❌ Google Translate failed: ${error.message}`);
+    // Handle 429 rate limit errors with retry
+    if (error.response && error.response.status === 429 && retryCount < maxRetries) {
+      const waitTime = Math.pow(2, retryCount) * 5000; // Exponential backoff: 5s, 10s, 20s
+      console.log(`⚠️ Rate limit hit (429). Waiting ${waitTime/1000}s before retry... (attempt ${retryCount + 1}/${maxRetries})`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+      return await translateSingleChunk(text, sourceLanguage, targetLanguage, retryCount + 1);
+    } else if (error.response && error.response.status === 429) {
+      console.log(`❌ Google Translate failed after ${maxRetries} retries due to rate limiting`);
+    }
+    console.log(`❌ Google Translate failed: ${error.response?.status || ''} ${error.message}`);
   }
 
   // Fallback to LibreTranslate (completely free)
@@ -756,15 +773,22 @@ async function translateJsonContent(jsonContent, sourceLanguage, targetLanguage)
   if (typeof jsonContent === 'string') {
     // Skip very short strings or numbers
     if (jsonContent.length < 3 || /^\d+$/.test(jsonContent)) {
+      console.log(`⏭️ Skipping very short text or number: "${jsonContent}"`);
       return jsonContent;
     }
     
     // REMOVED French detection for text values - translate everything
     // This ensures all English text gets translated even if mixed with some French words
     
-    console.log(`→ Translating text: "${jsonContent.substring(0, 80)}..."`);
+    console.log(`→ Translating text (${jsonContent.length} chars): "${jsonContent.substring(0, 80)}..."`);
     const translatedText = await translateText(jsonContent, sourceLanguage, targetLanguage);
-    console.log(`→ Translated to: "${translatedText.substring(0, 80)}..."`);
+    console.log(`→ Translation result (${translatedText ? translatedText.length : 0} chars): "${translatedText ? translatedText.substring(0, 80) : 'NULL'}..."`);
+    
+    // Check if translation returned same value
+    if (translatedText === jsonContent) {
+      console.log(`⚠️ WARNING: Translation returned identical text! Input: "${jsonContent.substring(0, 100)}"`);
+    }
+    
     return translatedText;
   } else if (Array.isArray(jsonContent)) {
     console.log(`📋 Translating array with ${jsonContent.length} items...`);
@@ -1377,9 +1401,25 @@ app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
     const rateLimitManager = new RateLimitManager(shop, accessToken);
     
     // Translate content from English to French
-    console.log('Translating content to French...');
+    console.log('='.repeat(80));
+    console.log('🗣️ TRANSLATING CONTENT TO FRENCH');
+    console.log('='.repeat(80));
+    console.log('Original content type:', typeof translatedContent);
+    console.log('Original content JSON:', JSON.stringify(translatedContent).substring(0, 300) + '...');
+    console.log('Source language: en, Target language: fr');
+    
     const frenchContent = await translateJsonContent(translatedContent, 'en', 'fr');
-    console.log('French content preview:', JSON.stringify(frenchContent).substring(0, 200) + '...');
+    
+    console.log('='.repeat(80));
+    console.log('✅ TRANSLATION COMPLETE');
+    console.log('='.repeat(80));
+    console.log('Translated content type:', typeof frenchContent);
+    console.log('Translated content JSON:', JSON.stringify(frenchContent).substring(0, 300) + '...');
+    
+    // Compare to check if translation actually changed
+    if (JSON.stringify(frenchContent) === JSON.stringify(translatedContent)) {
+      console.error('❌ ERROR: Translation returned identical JSON! Translation may have failed!');
+    }
     
     // Check API token permissions
     try {

@@ -1798,8 +1798,10 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
                             console.error(`❌ Error translating ${productTitle}:`, error.message);
                         }
 
-                        // Small delay between products
-                        await new Promise(resolve => setTimeout(resolve, 300));
+                        // Delay between products to avoid rate limits
+                        // With 2s delay per translation request, we need longer delays between products
+                        console.log(`⏱️ Waiting 3 seconds before next product...`);
+                        await new Promise(resolve => setTimeout(resolve, 3000));
                     }
 
                     currentPage++;
