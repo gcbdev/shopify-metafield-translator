@@ -474,10 +474,76 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
 // app.get('/auth/callback', async (req, res) => { ... });
 
 // Translation service using multiple free APIs
+// Split long text into chunks for translation
+function splitTextIntoChunks(text, maxLength = 3000) {
+  if (text.length <= maxLength) {
+    return [text];
+  }
+  
+  const chunks = [];
+  const sentences = text.match(/[^.!?]+[.!?]+/g) || text.split(' '); // Try to split by sentences first
+  
+  let currentChunk = '';
+  for (const sentence of sentences) {
+    if ((currentChunk + sentence).length <= maxLength) {
+      currentChunk += sentence + ' ';
+    } else {
+      if (currentChunk) {
+        chunks.push(currentChunk.trim());
+      }
+      currentChunk = sentence + ' ';
+    }
+  }
+  if (currentChunk) {
+    chunks.push(currentChunk.trim());
+  }
+  
+  return chunks.length > 0 ? chunks : [text];
+}
+
 async function translateText(text, sourceLanguage, targetLanguage) {
+  // Split long text into chunks
+  const textChunks = splitTextIntoChunks(text);
+  
+  // If text needs to be chunked, translate each chunk separately
+  if (textChunks.length > 1) {
+    console.log(`📝 Long text detected (${text.length} chars). Splitting into ${textChunks.length} chunks...`);
+    const translatedChunks = [];
+    
+    for (let i = 0; i < textChunks.length; i++) {
+      console.log(`Translating chunk ${i + 1}/${textChunks.length} (${textChunks[i].length} chars)...`);
+      try {
+        const translatedChunk = await translateSingleChunk(textChunks[i], sourceLanguage, targetLanguage);
+        if (!translatedChunk || translatedChunk.trim().length === 0) {
+          console.error(`⚠️ Chunk ${i + 1} returned empty translation. Using original.`);
+          translatedChunks.push(textChunks[i]); // Use original if translation fails
+        } else {
+          translatedChunks.push(translatedChunk);
+        }
+      } catch (error) {
+        console.error(`❌ Error translating chunk ${i + 1}:`, error.message);
+        translatedChunks.push(textChunks[i]); // Use original if translation fails
+      }
+      
+      // Small delay between chunks to avoid rate limits
+      if (i < textChunks.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 300));
+      }
+    }
+    
+    const combinedText = translatedChunks.join(' ');
+    console.log(`✅ Combined translation: ${combinedText.length} chars (${translatedChunks.length} chunks)`);
+    return combinedText;
+  }
+  
+  // Single chunk - translate normally
+  return await translateSingleChunk(text, sourceLanguage, targetLanguage);
+}
+
+async function translateSingleChunk(text, sourceLanguage, targetLanguage) {
   // Try Google Translate first (free tier: 500,000 characters/month)
   try {
-    console.log(`Translating "${text}" from ${sourceLanguage} to ${targetLanguage}`);
+    console.log(`Translating chunk "${text.substring(0, 100)}..." from ${sourceLanguage} to ${targetLanguage}`);
     
     // Google Translate API (free tier)
     const response = await axios.post('https://translate.googleapis.com/translate_a/single', null, {
@@ -495,7 +561,7 @@ async function translateText(text, sourceLanguage, targetLanguage) {
 
     if (response.data && response.data[0] && response.data[0][0]) {
       const translatedText = response.data[0][0][0];
-      console.log(`✅ Google Translate: "${text}" → "${translatedText}"`);
+      console.log(`✅ Google Translate: chunk translated`);
       return translatedText;
     }
   } catch (error) {
@@ -546,9 +612,23 @@ async function translateText(text, sourceLanguage, targetLanguage) {
   return text;
 }
 
+// Simple French word detection (common French words/patterns)
+function containsFrench(text) {
+  if (typeof text !== 'string') return false;
+  const frenchIndicators = ['de', 'du', 'des', 'le', 'la', 'les', 'et', 'ou', 'pour', 'avec', 'sur', 'dans', 'par', 'est', 'sont', 'couleur', 'couleurs', 'disponible', 'montage', 'filetage', 'augmentation', 'spécifications', 'marque'];
+  const lowerText = text.toLowerCase();
+  return frenchIndicators.some(word => lowerText.includes(word));
+}
+
 // Translate JSON content - return ONLY the French translation
 async function translateJsonContent(jsonContent, sourceLanguage, targetLanguage) {
   if (typeof jsonContent === 'string') {
+    // Check if text is already in target language
+    if (targetLanguage === 'fr' && containsFrench(jsonContent)) {
+      console.log(`Text already in French, skipping: "${jsonContent.substring(0, 50)}..."`);
+      return jsonContent; // Already in French, don't translate
+    }
+    
     const translatedText = await translateText(jsonContent, sourceLanguage, targetLanguage);
     // Return only the translated text
     return translatedText;
@@ -568,9 +648,16 @@ async function translateJsonContent(jsonContent, sourceLanguage, targetLanguage)
         // Keep technical fields unchanged
         translated[key] = value;
       } else {
-        // Translate ALL other field names and their values (including "General specifications", "Stand properties", etc.)
-        console.log(`Translating field: ${key}`);
-        const translatedKey = await translateText(key, sourceLanguage, targetLanguage);
+        // Check if key is already in target language
+        let translatedKey = key;
+        if (targetLanguage === 'fr' && !containsFrench(key)) {
+          console.log(`Translating key: ${key}`);
+          translatedKey = await translateText(key, sourceLanguage, targetLanguage);
+        } else {
+          console.log(`Key already in target language: ${key}`);
+        }
+        
+        // Translate the value
         const translatedValue = await translateJsonContent(value, sourceLanguage, targetLanguage);
         
         translated[translatedKey] = translatedValue;

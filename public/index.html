@@ -470,9 +470,6 @@
                     <button class="btn btn-secondary" onclick="jumpToPage()" style="min-width: 60px;">Go</button>
                 </div>
                 <button class="btn" onclick="translateToFrench()" id="translate-to-french-btn" style="background-color: #10b981; font-weight: bold;">🌍 Translate Current Page to French</button>
-                <div style="display: flex; gap: 5px; align-items: center;">
-                    <input type="number" id="start-page-input" placeholder="Start from page" style="width: 120px; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;" min="1" value="1">
-                </div>
                 <button class="btn" onclick="translateAllPages()" id="translate-all-pages-btn" style="background-color: #8b5cf6; font-weight: bold;">🚀 Translate ALL Pages (Auto-paginate)</button>
                 <button class="btn btn-secondary" onclick="refreshProductsList()" id="refresh-list-btn" style="background-color: #6b7280; font-weight: bold;">🔄 Refresh List</button>
             </div>
@@ -1676,23 +1673,9 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
                 return;
             }
 
-            // Get starting page from input
-            const startPageInput = document.getElementById('start-page-input');
-            const startPage = parseInt(startPageInput.value) || 1;
             const totalPages = Math.ceil(totalProductsCount / 20);
-            
-            // Validate starting page
-            if (startPage < 1) {
-                alert('Please enter a valid starting page number (1 or greater)');
-                return;
-            }
-            
-            if (startPage > totalPages) {
-                alert(`Starting page ${startPage} exceeds total pages (${totalPages}). Please enter a valid page number.`);
-                return;
-            }
 
-            const confirmTranslate = confirm(`🌍 TRANSLATE ALL PAGES\n\nStarting from page: ${startPage}\nTotal pages: ${totalPages}\nTotal products to translate: ${totalProductsCount}\n\n✅ French field will be filled\n✅ English content will remain UNTOUCHED\n✅ Auto-paginates through all pages starting from page ${startPage}\n✅ 10 second delay between pages to avoid rate limits\n\n⏱️ Estimated time: ${Math.ceil((totalPages - startPage + 1) * 6)} seconds\n\nAre you sure you want to proceed?`);
+            const confirmTranslate = confirm(`🌍 TRANSLATE ALL PAGES\n\nThis will translate ALL ${totalProductsCount} products across ALL pages.\n\n✅ French field will be filled\n✅ English content will remain UNTOUCHED\n✅ Auto-paginates through all pages\n✅ 10 second delay between pages to avoid rate limits\n\n⏱️ Estimated time: ${Math.ceil(totalProductsCount / 20 * 6)} seconds\n\nAre you sure you want to proceed?`);
             
             if (!confirmTranslate) return;
 
@@ -1700,8 +1683,8 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
             const progressContainer = document.getElementById('progress-container');
             progressContainer.style.display = 'block';
             document.getElementById('progress-fill').style.width = '0%';
-            document.getElementById('progress-text').textContent = `Starting from page ${startPage}`;
-            document.getElementById('progress-details').textContent = `Starting translation from page ${startPage}...`;
+            document.getElementById('progress-text').textContent = '0% Complete';
+            document.getElementById('progress-details').textContent = 'Starting translation of all pages...';
 
             // Disable buttons during translation
             const allButtons = ['force-english-btn', 'translate-to-french-btn', 'translate-all-pages-btn', 'refresh-list-btn'];
@@ -1712,76 +1695,26 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
 
             let totalSuccessCount = 0;
             let totalErrorCount = 0;
-            let currentPage = startPage;
+            let currentPage = 1;
 
             try {
-                const totalPagesToProcess = totalPages - startPage + 1;
-                let pagesProcessed = 0;
-                let currentPageInfo = null;
-                
-                // Navigate to starting page (get cursor for page 1 if starting from page 1)
-                if (startPage >= 1) {
-                    // Fetch page 1 to get started (or jump to desired starting page)
-                    if (startPage === 1) {
-                        console.log(`🚀 Starting from page 1`);
-                        document.getElementById('progress-details').textContent = `Starting from page 1...`;
-                    } else {
-                        console.log(`🚀 Navigating through pages to reach page ${startPage}...`);
-                        document.getElementById('progress-details').textContent = `Navigating to page ${startPage}...`;
-                    }
-                    
-                    // Fetch page 1 to get the first cursor
-                    let navPage = 1;
-                    let response = await fetch(`/api/products?shop=${shop}&limit=${productsPerPage}&page=${navPage}&showAll=${showAllProducts}`);
-                    let data = await response.json();
-                    
-                    if (data.success && data.nextPageInfo) {
-                        currentPageInfo = data.nextPageInfo;
-                    }
-                    
-                    // If starting from page > 1, navigate through pages 2 to startPage-1 quickly (just to get cursors, no translation)
-                    for (navPage = 2; navPage < startPage; navPage++) {
-                        console.log(`Navigating to page ${navPage}/${startPage - 1}...`);
-                        document.getElementById('progress-details').textContent = `Skipping to page ${startPage}... (navigating page ${navPage}/${startPage - 1})`;
-                        
-                        response = await fetch(`/api/products?shop=${shop}&limit=${productsPerPage}&showAll=${showAllProducts}&page_info=${currentPageInfo}`);
-                        data = await response.json();
-                        
-                        if (data.success && data.nextPageInfo) {
-                            currentPageInfo = data.nextPageInfo;
-                        }
-                        
-                        // Small delay to avoid rate limits
-                        await new Promise(resolve => setTimeout(resolve, 100));
-                    }
-                }
-                
                 while (currentPage <= totalPages) {
                     console.log(`\n=== TRANSLATING PAGE ${currentPage}/${totalPages} ===`);
-                    pagesProcessed++;
                     
-                    // Update progress based on pages from start page
-                    const pageProgress = Math.round((pagesProcessed / totalPagesToProcess) * 100);
+                    // Update progress
+                    const pageProgress = Math.round((currentPage / totalPages) * 100);
                     document.getElementById('progress-fill').style.width = pageProgress + '%';
                     document.getElementById('progress-text').textContent = `Page ${currentPage}/${totalPages}`;
                     document.getElementById('progress-details').textContent = `Translating page ${currentPage} of ${totalPages} (${totalSuccessCount} success, ${totalErrorCount} errors)...`;
 
-                    // Fetch products for current page
-                    const response = await fetch(`/api/products?shop=${shop}&limit=${productsPerPage}&showAll=${showAllProducts}&page_info=${currentPageInfo || ''}`);
-                    const pageData = await response.json();
+                    // Load products for current page
+                    await loadProducts(currentPage);
                     
-                    if (!pageData.success) {
-                        console.error(`Failed to fetch page ${currentPage}`);
-                        currentPage++;
-                        continue;
-                    }
-                    
-                    // Update currentPageInfo for next iteration
-                    if (pageData.nextPageInfo) {
-                        currentPageInfo = pageData.nextPageInfo;
-                    }
-                    
-                    const products = pageData.products;
+                    // Wait a bit for products to load
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+
+                    // Get products from current page
+                    const products = document.querySelectorAll('.product-card');
                     console.log(`Found ${products.length} products on page ${currentPage}`);
 
                     if (products.length === 0) {
@@ -1793,11 +1726,8 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
                     // Translate products on current page
                     for (let i = 0; i < products.length; i++) {
                         const product = products[i];
-                        
-                        // Find metafield in product data
-                        const metafield = product.metafields?.find(m => m.namespace === 'custom' && m.key === 'specification');
-                        const metafieldId = metafield ? metafield.id : '';
-                        const productTitle = product.title;
+                        const metafieldId = product.dataset.metafieldId;
+                        const productTitle = product.querySelector('.product-title').textContent;
 
                         console.log(`Translating product ${i + 1}/${products.length}: ${productTitle}`);
 
@@ -1833,7 +1763,7 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
                                 },
                                 body: JSON.stringify({
                                     translatedContent: jsonContent, // This will be translated to French
-                                    productId: product.id
+                                    productId: parseInt(product.dataset.productId)
                                 })
                             });
 
