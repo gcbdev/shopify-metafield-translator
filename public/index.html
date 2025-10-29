@@ -465,10 +465,6 @@
                 <button class="btn btn-secondary" onclick="loadPreviousPage()" id="prev-page-btn" disabled>Previous</button>
                 <span id="page-info" class="page-info">Page 1 of 1</span>
                 <button class="btn btn-secondary" onclick="loadNextPage()" id="next-page-btn" disabled>Next</button>
-                <div style="display: flex; gap: 5px; align-items: center;">
-                    <input type="number" id="page-jump-input" placeholder="Jump to page" style="width: 120px; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;" onkeypress="handlePageJump(event)" min="1">
-                    <button class="btn btn-secondary" onclick="jumpToPage()" style="min-width: 60px;">Go</button>
-                </div>
                 <button class="btn" onclick="translateToFrench()" id="translate-to-french-btn" style="background-color: #10b981; font-weight: bold;">🌍 Translate Current Page to French</button>
                 <button class="btn" onclick="translateAllPages()" id="translate-all-pages-btn" style="background-color: #8b5cf6; font-weight: bold;">🚀 Translate ALL Pages (Auto-paginate)</button>
                 <button class="btn btn-secondary" onclick="refreshProductsList()" id="refresh-list-btn" style="background-color: #6b7280; font-weight: bold;">🔄 Refresh List</button>
@@ -1031,71 +1027,6 @@
             }
         }
 
-        // Jump to specific page number
-        async function jumpToPage() {
-            const pageInput = document.getElementById('page-jump-input');
-            const targetPage = parseInt(pageInput.value);
-            
-            if (!targetPage || targetPage < 1) {
-                alert('Please enter a valid page number');
-                return;
-            }
-            
-            if (targetPage > totalPages) {
-                alert(`Page ${targetPage} does not exist. Total pages: ${totalPages}`);
-                return;
-            }
-            
-            // Disable all buttons during page jump
-            const allButtons = document.querySelectorAll('.pagination-controls button');
-            allButtons.forEach(btn => btn.disabled = true);
-            
-            const jumpBtn = document.querySelector('[onclick="jumpToPage()"]');
-            const goBtn = document.querySelector('button[onclick="jumpToPage()"]');
-            if (jumpBtn) jumpBtn.disabled = true;
-            if (goBtn) goBtn.disabled = true;
-            
-            console.log(`Jumping to page ${targetPage}...`);
-            
-            try {
-                // Reset to first page first
-                currentPageIndex = 0;
-                currentPage = 1;
-                pageHistory = [null];
-                nextPageInfo = null;
-                await loadProducts();
-                
-                // Then navigate to target page with delays to avoid rate limiting
-                const steps = targetPage - 1;
-                for (let i = 0; i < steps; i++) {
-                    await loadNextPage();
-                    // Add delay between page loads to avoid rate limits
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                }
-                
-                pageInput.value = '';
-            } catch (error) {
-                console.error('Error jumping to page:', error);
-                showError('Failed to jump to page. Please try again.');
-            } finally {
-                // Re-enable buttons
-                allButtons.forEach(btn => {
-                    if (btn.id === 'prev-page-btn' || btn.id === 'next-page-btn') {
-                        btn.disabled = currentPageIndex === 0 || !nextPageInfo;
-                    } else {
-                        btn.disabled = false;
-                    }
-                });
-            }
-        }
-        
-        // Handle Enter key in page jump input
-        function handlePageJump(event) {
-            if (event.key === 'Enter') {
-                jumpToPage();
-            }
-        }
-        
         async function bulkTranslateAllProducts() {
             if (bulkTranslationActive) {
                 showError('Bulk translation is already running!');
