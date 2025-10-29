@@ -1,6 +1,12 @@
 # Shopify Metafield Translator App
 
+
+test
+
+
 This Shopify app allows you to translate specific product metafields that contain JSON-formatted data.
+
+
 
 ## Features
 
