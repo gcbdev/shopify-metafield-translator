@@ -603,7 +603,16 @@ async function translateText(text, sourceLanguage, targetLanguage) {
   return await translateSingleChunk(text, sourceLanguage, targetLanguage);
 }
 
-async function translateSingleChunk(text, sourceLanguage, targetLanguage, retryCount = 0) {
+async function translateSingleChunk(text, sourceLanguage, targetLanguage) {
+  // Skip Google Translate entirely - it's completely rate limited
+  // Use MyMemory as primary service (it's working)
+  
+  console.log(`🔤 Translating: "${text.substring(0, 80)}${text.length > 80 ? '...' : ''}" [${sourceLanguage} → ${targetLanguage}]`);
+  
+  // Small delay to avoid rate limits
+  await new Promise(resolve => setTimeout(resolve, 300));
+  
+  /* DISABLED - Google Translate is rate limited */
   const maxRetries = 3;
   
   // Try Google Translate first (free tier: 500,000 characters/month)
@@ -611,9 +620,11 @@ async function translateSingleChunk(text, sourceLanguage, targetLanguage, retryC
     console.log(`🔤 Translating: "${text.substring(0, 100)}${text.length > 100 ? '...' : ''}" [${sourceLanguage} → ${targetLanguage}]`);
     
     // Add delay to avoid rate limiting
+    // Start with 500ms, will increase if we hit rate limits
+    const baseDelay = 500;
     if (retryCount === 0) {
-      console.log(`⏱️ Waiting 2000ms before translation request...`);
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      console.log(`⏱️ Waiting ${baseDelay}ms before translation request...`);
+      await new Promise(resolve => setTimeout(resolve, baseDelay));
     }
     
     // Google Translate API (free tier)
@@ -662,43 +673,25 @@ async function translateSingleChunk(text, sourceLanguage, targetLanguage, retryC
     }
     console.log(`❌ Google Translate failed: ${error.response?.status || ''} ${error.message}`);
   }
+  /* End of disabled Google Translate code */
 
-  // Fallback to LibreTranslate (completely free)
-  try {
-    const response = await axios.post('https://libretranslate.de/translate', {
-      q: text,
-      source: sourceLanguage,
-      target: targetLanguage,
-      format: 'text'
-    }, {
-      headers: {
-        'Content-Type': 'application/json'
-      }
-    });
-
-    if (response.data && response.data.translatedText) {
-      console.log(`✅ LibreTranslate: "${text}" → "${response.data.translatedText}"`);
-      return response.data.translatedText;
-    }
-  } catch (error) {
-    console.log('LibreTranslate failed, trying MyMemory...');
-  }
-
-  // Fallback to MyMemory
+  // Use MyMemory as primary service
   try {
     const response = await axios.get('https://api.mymemory.translated.net/get', {
       params: {
         q: text,
         langpair: `${sourceLanguage}|${targetLanguage}`
-      }
+      },
+      timeout: 10000
     });
 
     if (response.data.responseStatus === 200) {
-      console.log(`✅ MyMemory: "${text}" → "${response.data.responseData.translatedText}"`);
-      return response.data.responseData.translatedText;
+      const translated = response.data.responseData.translatedText;
+      console.log(`✅ MyMemory: ${text.length} → ${translated.length} chars`);
+      return translated;
     }
   } catch (error) {
-    console.log('MyMemory failed, using fallback...');
+    console.log(`❌ MyMemory failed: ${error.message}`);
   }
 
   // Final fallback - return original text (no language tag)
