@@ -1717,6 +1717,44 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
             try {
                 const totalPagesToProcess = totalPages - startPage + 1;
                 let pagesProcessed = 0;
+                let currentPageInfo = null;
+                
+                // Navigate to starting page (get cursor for page 1 if starting from page 1)
+                if (startPage >= 1) {
+                    // Fetch page 1 to get started (or jump to desired starting page)
+                    if (startPage === 1) {
+                        console.log(`🚀 Starting from page 1`);
+                        document.getElementById('progress-details').textContent = `Starting from page 1...`;
+                    } else {
+                        console.log(`🚀 Navigating through pages to reach page ${startPage}...`);
+                        document.getElementById('progress-details').textContent = `Navigating to page ${startPage}...`;
+                    }
+                    
+                    // Fetch page 1 to get the first cursor
+                    let navPage = 1;
+                    let response = await fetch(`/api/products?shop=${shop}&limit=${productsPerPage}&page=${navPage}&showAll=${showAllProducts}`);
+                    let data = await response.json();
+                    
+                    if (data.success && data.nextPageInfo) {
+                        currentPageInfo = data.nextPageInfo;
+                    }
+                    
+                    // If starting from page > 1, navigate through pages 2 to startPage-1 quickly (just to get cursors, no translation)
+                    for (navPage = 2; navPage < startPage; navPage++) {
+                        console.log(`Navigating to page ${navPage}/${startPage - 1}...`);
+                        document.getElementById('progress-details').textContent = `Skipping to page ${startPage}... (navigating page ${navPage}/${startPage - 1})`;
+                        
+                        response = await fetch(`/api/products?shop=${shop}&limit=${productsPerPage}&showAll=${showAllProducts}&page_info=${currentPageInfo}`);
+                        data = await response.json();
+                        
+                        if (data.success && data.nextPageInfo) {
+                            currentPageInfo = data.nextPageInfo;
+                        }
+                        
+                        // Small delay to avoid rate limits
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                    }
+                }
                 
                 while (currentPage <= totalPages) {
                     console.log(`\n=== TRANSLATING PAGE ${currentPage}/${totalPages} ===`);
@@ -1728,14 +1766,22 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
                     document.getElementById('progress-text').textContent = `Page ${currentPage}/${totalPages}`;
                     document.getElementById('progress-details').textContent = `Translating page ${currentPage} of ${totalPages} (${totalSuccessCount} success, ${totalErrorCount} errors)...`;
 
-                    // Load products for current page
-                    await loadProducts(currentPage);
+                    // Fetch products for current page
+                    const response = await fetch(`/api/products?shop=${shop}&limit=${productsPerPage}&showAll=${showAllProducts}&page_info=${currentPageInfo || ''}`);
+                    const pageData = await response.json();
                     
-                    // Wait a bit for products to load
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-
-                    // Get products from current page
-                    const products = document.querySelectorAll('.product-card');
+                    if (!pageData.success) {
+                        console.error(`Failed to fetch page ${currentPage}`);
+                        currentPage++;
+                        continue;
+                    }
+                    
+                    // Update currentPageInfo for next iteration
+                    if (pageData.nextPageInfo) {
+                        currentPageInfo = pageData.nextPageInfo;
+                    }
+                    
+                    const products = pageData.products;
                     console.log(`Found ${products.length} products on page ${currentPage}`);
 
                     if (products.length === 0) {
@@ -1747,8 +1793,11 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
                     // Translate products on current page
                     for (let i = 0; i < products.length; i++) {
                         const product = products[i];
-                        const metafieldId = product.dataset.metafieldId;
-                        const productTitle = product.querySelector('.product-title').textContent;
+                        
+                        // Find metafield in product data
+                        const metafield = product.metafields?.find(m => m.namespace === 'custom' && m.key === 'specification');
+                        const metafieldId = metafield ? metafield.id : '';
+                        const productTitle = product.title;
 
                         console.log(`Translating product ${i + 1}/${products.length}: ${productTitle}`);
 
@@ -1784,7 +1833,7 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
                                 },
                                 body: JSON.stringify({
                                     translatedContent: jsonContent, // This will be translated to French
-                                    productId: parseInt(product.dataset.productId)
+                                    productId: product.id
                                 })
                             });
 
