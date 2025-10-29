@@ -682,6 +682,36 @@ async function translateSingleChunk(text, sourceLanguage, targetLanguage, retryC
         }
       } catch (memError) {
         console.log(`❌ MyMemory fallback failed: ${memError.message}`);
+        
+        // Try LibreTranslate as second fallback for long text
+        console.log(`⚠️ Trying LibreTranslate as fallback...`);
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+        try {
+          const langMap = { 'en': 'en', 'fr': 'fr', 'es': 'es', 'de': 'de', 'it': 'it', 'pt': 'pt' };
+          const sourceLang = langMap[sourceLanguage] || sourceLanguage;
+          const targetLang = langMap[targetLanguage] || targetLanguage;
+          
+          const libreResponse = await axios.post('https://libretranslate.de/translate', {
+            q: text,
+            source: sourceLang,
+            target: targetLang,
+            format: 'text'
+          }, {
+            headers: { 'Content-Type': 'application/json' },
+            timeout: 20000
+          });
+          
+          if (libreResponse.data && libreResponse.data.translatedText) {
+            const translated = libreResponse.data.translatedText;
+            if (translated && translated !== text) {
+              console.log(`✅ LibreTranslate fallback: ${text.length} → ${translated.length} chars`);
+              return translated;
+            }
+          }
+        } catch (libreError) {
+          console.log(`❌ LibreTranslate fallback failed: ${libreError.message}`);
+        }
       }
     }
     
