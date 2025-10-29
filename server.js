@@ -502,6 +502,12 @@ function splitTextIntoChunks(text, maxLength = 3000) {
 }
 
 async function translateText(text, sourceLanguage, targetLanguage) {
+  // Skip very short text or numbers
+  if (!text || text.trim().length < 2) {
+    console.log('Skipping empty/very short text');
+    return text;
+  }
+  
   // Split long text into chunks
   const textChunks = splitTextIntoChunks(text);
   
@@ -511,13 +517,20 @@ async function translateText(text, sourceLanguage, targetLanguage) {
     const translatedChunks = [];
     
     for (let i = 0; i < textChunks.length; i++) {
-      console.log(`Translating chunk ${i + 1}/${textChunks.length} (${textChunks[i].length} chars)...`);
+      console.log(`\n[Chunk ${i + 1}/${textChunks.length}] Length: ${textChunks[i].length} chars`);
+      console.log(`Preview: "${textChunks[i].substring(0, 150)}..."`);
+      
       try {
         const translatedChunk = await translateSingleChunk(textChunks[i], sourceLanguage, targetLanguage);
+        
         if (!translatedChunk || translatedChunk.trim().length === 0) {
           console.error(`⚠️ Chunk ${i + 1} returned empty translation. Using original.`);
           translatedChunks.push(textChunks[i]); // Use original if translation fails
+        } else if (translatedChunk === textChunks[i]) {
+          console.log(`⚠️ Chunk ${i + 1} unchanged (might be already in target language)`);
+          translatedChunks.push(translatedChunk);
         } else {
+          console.log(`✅ Chunk ${i + 1} translated successfully`);
           translatedChunks.push(translatedChunk);
         }
       } catch (error) {
@@ -525,18 +538,21 @@ async function translateText(text, sourceLanguage, targetLanguage) {
         translatedChunks.push(textChunks[i]); // Use original if translation fails
       }
       
-      // Small delay between chunks to avoid rate limits
+      // Delay between chunks to ensure complete translation and avoid rate limits
       if (i < textChunks.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 300));
+        console.log(`⏱️ Waiting 800ms before next chunk...`);
+        await new Promise(resolve => setTimeout(resolve, 800));
       }
     }
     
     const combinedText = translatedChunks.join(' ');
-    console.log(`✅ Combined translation: ${combinedText.length} chars (${translatedChunks.length} chunks)`);
+    console.log(`\n✅ Combined ${translatedChunks.length} chunks: ${combinedText.length} chars total`);
+    console.log(`Result preview: "${combinedText.substring(0, 150)}..."`);
     return combinedText;
   }
   
   // Single chunk - translate normally
+  console.log(`📝 Single chunk (${text.length} chars) - translating now...`);
   return await translateSingleChunk(text, sourceLanguage, targetLanguage);
 }
 
@@ -692,12 +708,18 @@ async function translateJsonContent(jsonContent, sourceLanguage, targetLanguage)
     
     console.log(`→ Translating text: "${jsonContent.substring(0, 80)}..."`);
     const translatedText = await translateText(jsonContent, sourceLanguage, targetLanguage);
+    console.log(`→ Translated to: "${translatedText.substring(0, 80)}..."`);
     return translatedText;
   } else if (Array.isArray(jsonContent)) {
-    return await Promise.all(
+    const translatedArray = await Promise.all(
       jsonContent.map(item => translateJsonContent(item, sourceLanguage, targetLanguage))
     );
+    console.log(`📋 Translated array: ${translatedArray.length} items`);
+    return translatedArray;
   } else if (jsonContent && typeof jsonContent === 'object') {
+    console.log(`\n📦 Starting to translate object with ${Object.keys(jsonContent).length} keys...`);
+    console.log(`Original keys: ${Object.keys(jsonContent).join(', ')}`);
+    
     const translated = {};
     for (const [key, value] of Object.entries(jsonContent)) {
       // Skip only very technical fields that shouldn't be translated
@@ -708,14 +730,16 @@ async function translateJsonContent(jsonContent, sourceLanguage, targetLanguage)
       )) {
         // Keep technical fields unchanged
         translated[key] = value;
+        console.log(`⏭️ Skipped technical field: ${key}`);
       } else {
         // Check if key is already in target language
         let translatedKey = key;
         if (targetLanguage === 'fr' && !isLikelyFrench(key)) {
-          console.log(`→ Translating key: ${key}`);
+          console.log(`→ Translating key: "${key}" →`);
           translatedKey = await translateText(key, sourceLanguage, targetLanguage);
+          console.log(`   Result: "${translatedKey}"`);
         } else if (targetLanguage === 'fr' && isLikelyFrench(key)) {
-          console.log(`✓ Key already in French: ${key}`);
+          console.log(`✓ Key already in French: "${key}"`);
         }
         
         // Translate the value recursively
@@ -724,6 +748,15 @@ async function translateJsonContent(jsonContent, sourceLanguage, targetLanguage)
         translated[translatedKey] = translatedValue;
       }
     }
+    
+    console.log(`\n✅ Translated object completed.`);
+    console.log(`   Original keys: ${Object.keys(jsonContent).join(', ')}`);
+    console.log(`   Translated keys: ${Object.keys(translated).join(', ')}`);
+    
+    // Show full translated JSON
+    console.log(`\n📄 TRANSLATED JSON:`);
+    console.log(JSON.stringify(translated, null, 2));
+    
     return translated;
   }
   return jsonContent;

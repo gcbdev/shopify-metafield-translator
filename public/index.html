@@ -1961,8 +1961,14 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
             document.getElementById('refresh-list-btn').disabled = true;
             
             try {
-                // Reload products
-                await loadProducts();
+                // Reset pagination to page 1
+                currentPage = 1;
+                currentPageIndex = 0;
+                nextPageInfo = null;
+                pageHistory = [null];
+                
+                // Reload products from page 1
+                await loadProducts(1);
                 showSuccess('Product list refreshed successfully!');
             } catch (error) {
                 console.error('Error refreshing list:', error);
