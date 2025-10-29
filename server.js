@@ -475,27 +475,51 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
 
 // Translation service using multiple free APIs
 // Split long text into chunks for translation
-function splitTextIntoChunks(text, maxLength = 3000) {
+function splitTextIntoChunks(text, maxLength = 5000) {
   if (text.length <= maxLength) {
     return [text];
   }
   
+  // If text contains HTML, try to preserve HTML structure
   const chunks = [];
-  const sentences = text.match(/[^.!?]+[.!?]+/g) || text.split(' '); // Try to split by sentences first
   
-  let currentChunk = '';
-  for (const sentence of sentences) {
-    if ((currentChunk + sentence).length <= maxLength) {
-      currentChunk += sentence + ' ';
-    } else {
-      if (currentChunk) {
-        chunks.push(currentChunk.trim());
+  // First try to split by complete sentences (works better for HTML)
+  const sentences = text.match(/[^.!?]+[.!?]+/g);
+  
+  if (sentences && sentences.length > 0) {
+    let currentChunk = '';
+    for (const sentence of sentences) {
+      const sentenceWithSpace = sentence + ' ';
+      if ((currentChunk + sentenceWithSpace).length <= maxLength) {
+        currentChunk += sentenceWithSpace;
+      } else {
+        if (currentChunk) {
+          chunks.push(currentChunk.trim());
+        }
+        currentChunk = sentenceWithSpace;
       }
-      currentChunk = sentence + ' ';
     }
-  }
-  if (currentChunk) {
-    chunks.push(currentChunk.trim());
+    if (currentChunk) {
+      chunks.push(currentChunk.trim());
+    }
+  } else {
+    // Fallback: split by words if no sentences detected
+    const words = text.split(' ');
+    let currentChunk = '';
+    for (const word of words) {
+      const wordWithSpace = word + ' ';
+      if ((currentChunk + wordWithSpace).length <= maxLength) {
+        currentChunk += wordWithSpace;
+      } else {
+        if (currentChunk) {
+          chunks.push(currentChunk.trim());
+        }
+        currentChunk = wordWithSpace;
+      }
+    }
+    if (currentChunk) {
+      chunks.push(currentChunk.trim());
+    }
   }
   
   return chunks.length > 0 ? chunks : [text];
@@ -546,8 +570,20 @@ async function translateText(text, sourceLanguage, targetLanguage) {
     }
     
     const combinedText = translatedChunks.join(' ');
-    console.log(`\n✅ Combined ${translatedChunks.length} chunks: ${combinedText.length} chars total`);
+    const originalLength = text.length;
+    const translatedLength = combinedText.length;
+    
+    console.log(`\n✅ Combined ${translatedChunks.length} chunks`);
+    console.log(`   Original length: ${originalLength} chars`);
+    console.log(`   Translated length: ${translatedLength} chars`);
+    
+    if (translatedLength < originalLength * 0.8) {
+      console.error(`⚠️ WARNING: Translated text is much shorter (${(translatedLength/originalLength*100).toFixed(0)}%). Some content may be missing!`);
+    }
+    
     console.log(`Result preview: "${combinedText.substring(0, 150)}..."`);
+    console.log(`Result end: "...${combinedText.substring(Math.max(0, combinedText.length - 150))}"`);
+    
     return combinedText;
   }
   
@@ -723,7 +759,7 @@ async function translateJsonContent(jsonContent, sourceLanguage, targetLanguage)
     const translated = {};
     for (const [key, value] of Object.entries(jsonContent)) {
       // Skip only very technical fields that shouldn't be translated
-      const skipFields = ['id', 'sku', 'barcode', 'ean', 'upc', 'isbn', 'asin', 'url', 'link', 'image', 'images', 'video', 'videos', 'price', 'cost', 'weight', 'dimensions', 'size', 'color_code', 'hex', 'rgb', 'hsl', 'date', 'time', 'timestamp', 'created_at', 'updated_at', 'status'];
+      const skipFields = ['id', 'sku', 'barcode', 'ean', 'upc', 'isbn', 'asin', 'url', 'link', 'image', 'images', 'video', 'videos', 'price', 'cost', 'dimensions', 'color_code', 'hex', 'rgb', 'hsl', 'date', 'time', 'timestamp', 'created_at', 'updated_at', 'status'];
       
       if (skipFields.some(skipKey => 
         key.toLowerCase().includes(skipKey.toLowerCase())
@@ -732,17 +768,34 @@ async function translateJsonContent(jsonContent, sourceLanguage, targetLanguage)
         translated[key] = value;
         console.log(`⏭️ Skipped technical field: ${key}`);
       } else {
-        // Check if key is already in target language
+        // ALWAYS try to translate keys unless they're very clearly technical
+        // This ensures English keys get translated even in mixed-language JSON
         let translatedKey = key;
-        if (targetLanguage === 'fr' && !isLikelyFrench(key)) {
+        
+        // More aggressive: only skip if it's clearly technical or already definitely French
+        const isTechnical = key.toLowerCase().includes('id') || 
+                           key.toLowerCase().includes('sku') ||
+                           key.toLowerCase().includes('barcode') ||
+                           /^[a-z]$/i.test(key) || // Single letter
+                           /^[\d\s]+$/.test(key);  // Numbers only
+        
+        const isDefinitelyFrench = targetLanguage === 'fr' && isLikelyFrench(key);
+        
+        if (!isTechnical && !isDefinitelyFrench) {
           console.log(`→ Translating key: "${key}" →`);
-          translatedKey = await translateText(key, sourceLanguage, targetLanguage);
-          console.log(`   Result: "${translatedKey}"`);
-        } else if (targetLanguage === 'fr' && isLikelyFrench(key)) {
+          try {
+            translatedKey = await translateText(key, sourceLanguage, targetLanguage);
+            console.log(`   Result: "${translatedKey}"`);
+          } catch (error) {
+            console.log(`⚠️ Key translation failed, keeping original: ${key}`);
+            translatedKey = key;
+          }
+        } else if (isDefinitelyFrench) {
           console.log(`✓ Key already in French: "${key}"`);
         }
         
-        // Translate the value recursively
+        // Translate the value recursively (this will handle nested objects and arrays)
+        console.log(`   Translating value for key "${translatedKey}"...`);
         const translatedValue = await translateJsonContent(value, sourceLanguage, targetLanguage);
         
         translated[translatedKey] = translatedValue;
@@ -1389,7 +1442,8 @@ app.put('/api/metafield/:id', authenticateShopify, async (req, res) => {
       res.json({
         success: true,
         translation: response.data.data.translationsRegister.translations[0],
-        message: 'French field filled successfully! Original content remains unchanged.'
+        message: 'French field filled successfully! Original content remains unchanged.',
+        translatedContent: frenchContent  // Return the translated JSON
       });
     } else {
       console.error('Unexpected response structure:', response.data);

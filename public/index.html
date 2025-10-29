@@ -1755,6 +1755,11 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
                                 continue;
                             }
 
+                            // Show what we're about to translate
+                            console.log(`\n🌍 === Translating Product: ${productTitle} ===`);
+                            console.log(`📦 Original JSON:`, JSON.stringify(jsonContent, null, 2));
+                            console.log(`🔤 Starting translation process...`);
+                            
                             // Translate English content to French
                             const translateResponse = await fetch(`/api/metafield/${metafieldId}?shop=${shop}`, {
                                 method: 'PUT',
@@ -1771,10 +1776,21 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
 
                             if (result.success) {
                                 totalSuccessCount++;
-                                console.log(`✅ Translated to French: ${productTitle}`);
+                                console.log(`✅ Translation successful!`);
+                                
+                                // Display the translated JSON
+                                if (result.translatedContent) {
+                                    console.log(`📄 Translated JSON:`);
+                                    console.log(JSON.stringify(result.translatedContent, null, 2));
+                                } else {
+                                    console.log(`📄 Translation completed (check server logs for translated JSON)`);
+                                }
+                                
+                                console.log(`---\n`);
                             } else {
                                 totalErrorCount++;
                                 console.error(`❌ Failed to translate ${productTitle}:`, result.error);
+                                console.error(`Error details:`, result);
                             }
 
                         } catch (error) {
@@ -2105,9 +2121,10 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
 
                 const result = await response.json();
 
-                if (result.success) {
-                    successCount++;
-                    console.log(`✅ FORCE translated to English: ${productTitle}`);
+                            if (result.success) {
+                                successCount++;
+                                console.log(`✅ FORCE translated to English: ${productTitle}`);
+                                console.log(`📄 English content updated\n`);
                     
                     // Update the product display
                     const metafieldPreview = product.querySelector('.metafield-preview');
