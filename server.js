@@ -484,7 +484,8 @@ function splitTextIntoChunks(text, maxLength = 5000) {
   const chunks = [];
   
   // First try to split by complete sentences (works better for HTML)
-  const sentences = text.match(/[^.!?]+[.!?]+/g);
+  // Handle HTML breaks and sentence endings
+  const sentences = text.match(/[^.!?]+[.!?]+(?:\s|$)/g) || text.match(/[^.!?]+[.!?]+/g);
   
   if (sentences && sentences.length > 0) {
     let currentChunk = '';
@@ -547,6 +548,8 @@ async function translateText(text, sourceLanguage, targetLanguage) {
       try {
         const translatedChunk = await translateSingleChunk(textChunks[i], sourceLanguage, targetLanguage);
         
+        console.log(`   Chunk ${i + 1} result: ${translatedChunk ? translatedChunk.length : 0} chars`);
+        
         if (!translatedChunk || translatedChunk.trim().length === 0) {
           console.error(`⚠️ Chunk ${i + 1} returned empty translation. Using original.`);
           translatedChunks.push(textChunks[i]); // Use original if translation fails
@@ -554,7 +557,7 @@ async function translateText(text, sourceLanguage, targetLanguage) {
           console.log(`⚠️ Chunk ${i + 1} unchanged (might be already in target language)`);
           translatedChunks.push(translatedChunk);
         } else {
-          console.log(`✅ Chunk ${i + 1} translated successfully`);
+          console.log(`✅ Chunk ${i + 1} translated: ${textChunks[i].length} → ${translatedChunk.length} chars`);
           translatedChunks.push(translatedChunk);
         }
       } catch (error) {
@@ -564,11 +567,12 @@ async function translateText(text, sourceLanguage, targetLanguage) {
       
       // Delay between chunks to ensure complete translation and avoid rate limits
       if (i < textChunks.length - 1) {
-        console.log(`⏱️ Waiting 800ms before next chunk...`);
-        await new Promise(resolve => setTimeout(resolve, 800));
+        console.log(`⏱️ Waiting 1000ms before next chunk...`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
     }
     
+    // Combine chunks with proper spacing
     const combinedText = translatedChunks.join(' ');
     const originalLength = text.length;
     const translatedLength = combinedText.length;
@@ -576,13 +580,20 @@ async function translateText(text, sourceLanguage, targetLanguage) {
     console.log(`\n✅ Combined ${translatedChunks.length} chunks`);
     console.log(`   Original length: ${originalLength} chars`);
     console.log(`   Translated length: ${translatedLength} chars`);
+    console.log(`   Retention: ${((translatedLength/originalLength)*100).toFixed(1)}%`);
     
-    if (translatedLength < originalLength * 0.8) {
-      console.error(`⚠️ WARNING: Translated text is much shorter (${(translatedLength/originalLength*100).toFixed(0)}%). Some content may be missing!`);
+    // Calculate total chunk lengths
+    const totalChunkLengths = translatedChunks.reduce((sum, chunk) => sum + (chunk ? chunk.length : 0), 0);
+    console.log(`   Total chunks size: ${totalChunkLengths} chars`);
+    
+    if (translatedLength < originalLength * 0.7) {
+      console.error(`⚠️ WARNING: Translated text is much shorter! Only ${((translatedLength/originalLength)*100).toFixed(0)}% retained.`);
+      console.error(`   Some chunks may have failed or been truncated.`);
+      console.error(`   Check logs above for failed chunks.`);
     }
     
-    console.log(`Result preview: "${combinedText.substring(0, 150)}..."`);
-    console.log(`Result end: "...${combinedText.substring(Math.max(0, combinedText.length - 150))}"`);
+    console.log(`   Result preview: "${combinedText.substring(0, 150)}..."`);
+    console.log(`   Result end: "...${combinedText.substring(Math.max(0, combinedText.length - 150))}"`);
     
     return combinedText;
   }
@@ -611,10 +622,23 @@ async function translateSingleChunk(text, sourceLanguage, targetLanguage) {
       }
     });
 
-    if (response.data && response.data[0] && response.data[0][0]) {
-      const translatedText = response.data[0][0][0];
-      console.log(`✅ Google Translate: "${text}" → "${translatedText}"`);
-      return translatedText;
+    if (response.data && response.data[0]) {
+      // Google Translate returns an array of translation segments
+      // Combine all segments to get the full translation
+      const translatedSegments = response.data[0]
+        .filter(segment => segment && segment[0])
+        .map(segment => segment[0])
+        .join('');
+      
+      const translatedText = translatedSegments || '';
+      
+      if (translatedText) {
+        console.log(`✅ Google Translate: ${text.length} chars → ${translatedText.length} chars`);
+        console.log(`   Preview: "${translatedText.substring(0, 100)}..."`);
+        return translatedText;
+      } else {
+        console.log(`⚠️ Google Translate: Empty translation returned`);
+      }
     } else {
       console.log(`⚠️ Google Translate: Unexpected response structure`);
     }
