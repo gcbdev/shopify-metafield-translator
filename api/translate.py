@@ -113,4 +113,9 @@ def http_handler():
         }), 500))
 
 
+# Also serve the same handler on /api/translate for local runs
+@app.route('/api/translate', methods=['GET', 'POST', 'OPTIONS'])
+def http_handler_alias():
+    return http_handler()
+
 # No extra handler needed; Vercel detects the Flask WSGI app via module-level `app`
