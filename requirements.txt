@@ -3,14 +3,4 @@
 googletrans==4.0.2
 httpx[http2]>=0.27.2
 
-# Fallback: translators library (37+ translation services)
-# Includes: Google, Bing, Yandex, Alibaba, Baidu, MyMemory, DeepL, etc.
-translators>=6.0.0
-lxml>=5.4.0
-tqdm>=4.67.1
-exejs>=0.0.4
-pathos>=0.3.4
-requests>=2.32.3
-niquests>=3.14.0
-cloudscraper>=1.2.71
-cryptography>=42.0.4
+Flask>=2.3

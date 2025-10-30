@@ -668,177 +668,27 @@ async function translateSingleChunk(text, sourceLanguage, targetLanguage, retryC
         return pythonResult;
       }
     } catch (pythonError) {
-      console.log(`⚠️ Python API failed, trying translators library services (Bing, Alibaba) as 2nd backup...`);
-      
-      // Try translators library services via direct HTTP calls before MyMemory
-      // These are the services from translators-master that we integrated
+      console.log(`⚠️ Python API failed, using MyMemory as 2nd fallback...`);
       try {
-        // Try Bing Translate (from translators library)
-        console.log(`🌐 Trying Bing Translate (translators library backup)...`);
-        const bingResponse = await axios.post('https://www.bing.com/ttranslatev3', null, {
+        const memResponse = await axios.get('https://api.mymemory.translated.net/get', {
           params: {
-            text: text,
-            fromLang: sourceLanguage || 'auto-detect',
-            to: targetLanguage
-          },
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept': 'application/json'
+            q: text,
+            langpair: `${sourceLanguage}|${targetLanguage}`,
+            de: 'gcbdevs@gmail.com',
+            key: 'f1f6b192448413778691'
           },
           timeout: 15000
         });
-        
-        if (bingResponse.data && bingResponse.data[0] && bingResponse.data[0].translations && bingResponse.data[0].translations[0]) {
-          const translated = bingResponse.data[0].translations[0].text;
+        if (memResponse.data.responseStatus === 200) {
+          const translated = memResponse.data.responseData.translatedText;
           if (translated && translated !== text) {
-            console.log(`✅ Bing Translate (translators): ${text.length} → ${translated.length} chars`);
+            console.log(`✅ MyMemory (2nd fallback): ${text.length} → ${translated.length} chars`);
             return translated;
           }
         }
-      } catch (bingError) {
-        console.log(`❌ Bing Translate failed, trying Alibaba...`);
-        
-        // Try Alibaba Translate (from translators library)
-        try {
-          console.log(`🌐 Trying Alibaba Translate (translators library backup)...`);
-          const alibabaResponse = await axios.post('https://translate.alibaba.com/api/translate/text', {
-            text: text,
-            sourceLanguage: sourceLanguage || 'auto',
-            targetLanguage: targetLanguage
-          }, {
-            headers: {
-              'Content-Type': 'application/json',
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            },
-            timeout: 15000
-          });
-          
-          if (alibabaResponse.data && alibabaResponse.data.data && alibabaResponse.data.data.translateText) {
-            const translated = alibabaResponse.data.data.translateText;
-            if (translated && translated !== text) {
-              console.log(`✅ Alibaba Translate (translators): ${text.length} → ${translated.length} chars`);
-              return translated;
-            }
-          }
-        } catch (alibabaError) {
-          console.log(`❌ Alibaba Translate failed, trying Google/MyMemory as 3rd backup...`);
-          
-          // 3RD BACKUP: Google Translate HTTP / MyMemory (moved up in priority)
-          const isLongText = text.length > 500;
-          
-          if (isLongText) {
-            // Try Google Translate FIRST for long texts
-            try {
-              console.log(`🌐 Trying Google Translate HTTP (3rd backup)...`);
-              const googleResponse = await axios.post('https://translate.googleapis.com/translate_a/single', null, {
-                params: {
-                  client: 'gtx',
-                  sl: sourceLanguage,
-                  tl: targetLanguage,
-                  dt: 't',
-                  q: text
-                },
-                headers: {
-                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                },
-                timeout: 20000
-              });
-              
-              if (googleResponse.data && googleResponse.data[0]) {
-                const translatedSegments = googleResponse.data[0]
-                  .filter(segment => segment && segment[0])
-                  .map(segment => segment[0])
-                  .join('');
-                
-                if (translatedSegments && translatedSegments !== text) {
-                  console.log(`✅ Google Translate HTTP (3rd backup): ${text.length} → ${translatedSegments.length} chars`);
-                  return translatedSegments;
-                }
-              }
-            } catch (googleError) {
-              console.log(`❌ Google Translate HTTP failed, trying MyMemory...`);
-              
-              // Try MyMemory as fallback
-              try {
-                await new Promise(resolve => setTimeout(resolve, 300));
-                const memResponse = await axios.get('https://api.mymemory.translated.net/get', {
-                  params: {
-                    q: text,
-                    langpair: `${sourceLanguage}|${targetLanguage}`
-                  },
-                  timeout: 15000
-                });
-                
-                if (memResponse.data.responseStatus === 200) {
-                  const translated = memResponse.data.responseData.translatedText;
-                  if (translated && translated !== text) {
-                    console.log(`✅ MyMemory (3rd backup): ${text.length} → ${translated.length} chars`);
-                    return translated;
-                  }
-                }
-              } catch (memError) {
-                console.log(`❌ MyMemory failed, continuing to other fallbacks...`);
-              }
-            }
-          } else {
-            // Try MyMemory FIRST for short texts
-            try {
-              console.log(`🌐 Trying MyMemory (3rd backup for short text)...`);
-              const memResponse = await axios.get('https://api.mymemory.translated.net/get', {
-                params: {
-                  q: text,
-                  langpair: `${sourceLanguage}|${targetLanguage}`
-                },
-                timeout: 15000
-              });
-              
-              if (memResponse.data.responseStatus === 200) {
-                const translated = memResponse.data.responseData.translatedText;
-                if (translated && translated !== text) {
-                  console.log(`✅ MyMemory (3rd backup): ${text.length} → ${translated.length} chars`);
-                  return translated;
-                }
-              }
-            } catch (memError) {
-              console.log(`❌ MyMemory failed, trying Google Translate HTTP...`);
-              
-              // Try Google Translate as fallback
-              try {
-                await new Promise(resolve => setTimeout(resolve, 300));
-                const googleResponse = await axios.post('https://translate.googleapis.com/translate_a/single', null, {
-                  params: {
-                    client: 'gtx',
-                    sl: sourceLanguage,
-                    tl: targetLanguage,
-                    dt: 't',
-                    q: text
-                  },
-                  headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                  },
-                  timeout: 20000
-                });
-                
-                if (googleResponse.data && googleResponse.data[0]) {
-                  const translatedSegments = googleResponse.data[0]
-                    .filter(segment => segment && segment[0])
-                    .map(segment => segment[0])
-                    .join('');
-                  
-                  if (translatedSegments && translatedSegments !== text) {
-                    console.log(`✅ Google Translate HTTP (3rd backup): ${text.length} → ${translatedSegments.length} chars`);
-                    return translatedSegments;
-                  }
-                }
-              } catch (googleError) {
-                console.log(`❌ Google Translate HTTP failed, continuing to other fallbacks...`);
-              }
-            }
-          }
-        }
+      } catch (memError) {
+        console.log(`❌ MyMemory (2nd fallback) failed: ${memError.message}`);
       }
-      
-      // Continue to other fallback services (Yandex, etc.)
     }
   }
   
@@ -962,7 +812,9 @@ async function translateSingleChunk(text, sourceLanguage, targetLanguage, retryC
         const response = await axios.get('https://api.mymemory.translated.net/get', {
           params: {
             q: text,
-            langpair: `${sourceLanguage}|${targetLanguage}`
+            langpair: `${sourceLanguage}|${targetLanguage}`,
+            de: 'gcbdevs@gmail.com',
+            key: 'f1f6b192448413778691'
           },
           timeout: 15000
         });
@@ -1023,7 +875,9 @@ async function translateSingleChunk(text, sourceLanguage, targetLanguage, retryC
       const response = await axios.get('https://api.mymemory.translated.net/get', {
         params: {
           q: text,
-          langpair: `${sourceLanguage}|${targetLanguage}`
+          langpair: `${sourceLanguage}|${targetLanguage}`,
+          de: 'gcbdevs@gmail.com',
+          key: 'f1f6b192448413778691'
         },
         timeout: 15000
       });
@@ -1121,7 +975,9 @@ async function translateSingleChunk(text, sourceLanguage, targetLanguage, retryC
     const response = await axios.get('https://api.mymemory.translated.net/get', {
       params: {
         q: text,
-        langpair: `${sourceLanguage}|${targetLanguage}`
+        langpair: `${sourceLanguage}|${targetLanguage}`,
+        de: 'gcbdevs@gmail.com',
+        key: 'f1f6b192448413778691'
       },
       timeout: 15000
     });
