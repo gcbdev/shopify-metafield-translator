@@ -113,6 +113,4 @@ def http_handler():
         }), 500))
 
 
-# Vercel entrypoint
-def handler(request):
-    return app(request.environ, lambda status, headers: None)
+# No extra handler needed; Vercel detects the Flask WSGI app via module-level `app`
