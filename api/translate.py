@@ -6,6 +6,7 @@ Removes translators-master fallback to avoid 401/crash issues
 import json
 import asyncio
 from flask import Flask, request, jsonify, make_response
+import re
 from googletrans import Translator
 
 app = Flask(__name__)
@@ -13,9 +14,25 @@ app = Flask(__name__)
 
 async def translate_text(text, source_lang='auto', target_lang='en'):
     try:
+        # Protect template/placeholders like {{var}} or {var}
+        masks = {}
+        def _mask(m):
+            key = f"__PH_{len(masks)}__"
+            masks[key] = m.group(0)
+            return key
+
+        # Mask handlebars {{...}} and single-brace {...} placeholders
+        masked = re.sub(r"\{\{[^{}]+\}\}", _mask, text)
+        masked = re.sub(r"\{[\w.:\-]+\}", _mask, masked)
+
         async with Translator() as translator:
-            result = await translator.translate(text, src=source_lang, dest=target_lang)
-            return result.text
+            result = await translator.translate(masked, src=source_lang, dest=target_lang)
+            translated = result.text
+
+        # Unmask placeholders
+        for k, v in masks.items():
+            translated = translated.replace(k, v)
+        return translated
     except Exception as e:
         raise Exception(f"Translation error: {str(e)}")
 
