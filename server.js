@@ -566,10 +566,10 @@ async function translateText(text, sourceLanguage, targetLanguage) {
         translatedChunks.push(textChunks[i]); // Use original if translation fails
       }
       
-      // Delay between chunks - reduced to avoid timeouts
+      // Increased delay between chunks to avoid rate limits
       if (i < textChunks.length - 1) {
-        const chunkDelay = parseInt(process.env.TRANSLATION_CHUNK_DELAY) || 200;
-        console.log(`⏱️ Waiting ${chunkDelay}ms before next chunk...`);
+        const chunkDelay = parseInt(process.env.TRANSLATION_CHUNK_DELAY) || 1000; // Increased from 200ms to 1000ms
+        console.log(`⏱️ Waiting ${chunkDelay}ms before next chunk to avoid rate limits...`);
         await new Promise(resolve => setTimeout(resolve, chunkDelay));
       }
     }
@@ -649,7 +649,8 @@ async function translateWithPythonAPI(text, sourceLanguage, targetLanguage) {
 async function translateSingleChunk(text, sourceLanguage, targetLanguage, retryCount = 0) {
   const maxRetries = 1; // Only 1 retry to avoid wasting time
   // Configurable delay - reduced from 5s to 1s by default, configurable via env
-  const baseDelay = parseInt(process.env.TRANSLATION_DELAY) || 1000;
+  // Increased base delay to prevent rate limits
+  const baseDelay = parseInt(process.env.TRANSLATION_DELAY) || 2000; // Increased from 1000ms to 2000ms
   const shortTextThreshold = 500; // Use free services (MyMemory/Yandex/Google) for short, Google for long
   // Yandex API credentials (hardcoded for now, can be overridden via env vars)
   const yandexApiKey = process.env.YANDEX_API_KEY || 'AQVNytwIR5D0Njp54CNXOaTQ-J3qQkj2lcLpc6Bu';
@@ -837,9 +838,11 @@ async function translateSingleChunk(text, sourceLanguage, targetLanguage, retryC
       }
     }
     
-    // Handle rate limiting with retry
+    // Handle rate limiting with retry (exponential backoff)
     if (googleError.response && googleError.response.status === 429 && retryCount < maxRetries) {
-      console.log(`⚠️ Rate limit hit. Will retry...`);
+      const retryDelay = Math.min(5000 * (retryCount + 1), 30000); // Exponential backoff, max 30s
+      console.log(`⚠️ Rate limit hit (429). Waiting ${retryDelay/1000}s before retry...`);
+      await new Promise(resolve => setTimeout(resolve, retryDelay));
       return await translateSingleChunk(text, sourceLanguage, targetLanguage, retryCount + 1);
     }
   }
@@ -933,7 +936,9 @@ async function translateSingleChunk(text, sourceLanguage, targetLanguage, retryC
       
       // Only retry MyMemory if it was a rate limit and we haven't exhausted retries
       if (memError.response && memError.response.status === 429 && retryCount < maxRetries) {
-        console.log(`⚠️ Rate limit hit. Will retry...`);
+        const retryDelay = Math.min(5000 * (retryCount + 1), 30000); // Exponential backoff, max 30s
+        console.log(`⚠️ Rate limit hit (429). Waiting ${retryDelay/1000}s before retry...`);
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
         return await translateSingleChunk(text, sourceLanguage, targetLanguage, retryCount + 1);
       }
     }
@@ -957,13 +962,15 @@ async function translateSingleChunk(text, sourceLanguage, targetLanguage, retryC
       console.log(`✅ MyMemory: ${text.length} → ${translated.length} chars`);
       return translated;
     }
-  } catch (error) {
-    // Handle rate limiting with retry
-    if (error.response && error.response.status === 429 && retryCount < maxRetries) {
-      console.log(`⚠️ MyMemory rate limit (429). Will retry...`);
+  } catch (memError) {
+    // Handle rate limiting with retry (exponential backoff)
+    if (memError.response && memError.response.status === 429 && retryCount < maxRetries) {
+      const retryDelay = Math.min(5000 * (retryCount + 1), 30000); // Exponential backoff, max 30s
+      console.log(`⚠️ MyMemory rate limit (429). Waiting ${retryDelay/1000}s before retry...`);
+      await new Promise(resolve => setTimeout(resolve, retryDelay));
       return await translateSingleChunk(text, sourceLanguage, targetLanguage, retryCount + 1);
     }
-    console.log(`❌ MyMemory failed: ${error.response?.status || ''} ${error.message}`);
+    console.log(`❌ MyMemory failed: ${memError.response?.status || ''} ${memError.message}`);
   }
 
   // Final fallback - return original text
@@ -1942,8 +1949,8 @@ app.post('/api/bulk-translate-all', authenticateShopify, async (req, res) => {
       details: []
     };
 
-    // Process products in batches - 20 products per batch with 10s delay between batches
-    const batchSize = 20; // Process 20 products at a time
+    // Process products in batches - REDUCED to 10 products per batch with longer delays to avoid rate limits
+    const batchSize = 10; // Reduced from 20 to avoid rate limits
     for (let i = 0; i < allProducts.length; i += batchSize) {
       const batch = allProducts.slice(i, i + batchSize);
       const batchNumber = Math.floor(i/batchSize) + 1;
@@ -1955,8 +1962,12 @@ app.post('/api/bulk-translate-all', authenticateShopify, async (req, res) => {
       // Check rate limit before processing each batch
       await rateLimitManager.ensureRateLimitAvailable();
       
-      // Process batch in parallel for faster translation
-      const batchPromises = batch.map(async (product) => {
+      // Process batch with delays between products to avoid rate limits
+      const batchPromises = batch.map(async (product, index) => {
+        // Add small delay between products in batch to prevent overwhelming APIs
+        if (index > 0) {
+          await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay between products
+        }
         try {
           // Check if product has metafield
           const metafieldResponse = await axios.get(`https://${shop}/admin/api/2023-10/products/${product.id}/metafields.json`, {
@@ -2008,8 +2019,20 @@ app.post('/api/bulk-translate-all', authenticateShopify, async (req, res) => {
                 targetLanguage: targetLanguage
               }, {
                 timeout: 60000, // 60s timeout for JSON translation
-                headers: { 'Content-Type': 'application/json' }
+                headers: { 'Content-Type': 'application/json' },
+                validateStatus: function (status) {
+                  return status < 500; // Don't throw on 401/429, handle it
+                }
               });
+              
+              // Check for 401 (auth error) or 429 (rate limit)
+              if (response.status === 401) {
+                throw new Error('Python API authentication failed (401) - check Vercel function');
+              }
+              if (response.status === 429) {
+                console.log(`⚠️ Python API rate limited (429), will use fallback...`);
+                throw new Error('Rate limited');
+              }
               
               if (response.data && response.data.success) {
                 frenchContent = response.data.translated;
@@ -2123,12 +2146,18 @@ app.post('/api/bulk-translate-all', authenticateShopify, async (req, res) => {
         results.details.push(result);
       });
 
-      // Add 10 second delay between batches to avoid pagination/rate limit issues
+      // Add longer delay between batches with exponential backoff to avoid rate limits
       if (i + batchSize < allProducts.length) {
-        console.log(`\n⏱️ Waiting 10 seconds before next batch to avoid rate limiting...`);
+        // Increase delay based on batch number (exponential backoff)
+        const baseDelay = 20000; // 20 seconds base delay
+        const batchNumber = Math.floor(i/batchSize) + 1;
+        const delay = Math.min(baseDelay + (batchNumber * 5000), 60000); // Max 60 seconds
+        
+        console.log(`\n⏱️ Waiting ${delay/1000} seconds before next batch to avoid rate limiting...`);
         console.log(`   Completed: ${results.processed}/${allProducts.length} products`);
         console.log(`   Success: ${results.success}, Errors: ${results.errors}, Skipped: ${results.skipped}`);
-        await new Promise(resolve => setTimeout(resolve, 10000)); // 10 second delay between batches
+        console.log(`   ⚠️ Longer delays help prevent hitting translation service rate limits`);
+        await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
 

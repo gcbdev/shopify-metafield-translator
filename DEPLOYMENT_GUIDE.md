@@ -147,11 +147,13 @@ For long translations, the system automatically chunks text.
 
 **Option A: Use PyPI (Recommended)** ✅
 - Already configured in `requirements.txt`
-- `googletrans==4.0.2` will be installed automatically
+- `googletrans==4.0.2` and `translators>=6.0.0` will be installed automatically
 - **Easiest - no file copying needed!**
+- Includes both primary (googletrans) and backup (translators library with 37+ services)
 
 **Option B: Use Local Source**
-- Copy `googletrans` folder manually
+- Copy `googletrans` folder manually (optional)
+- Copy `translators` folder manually (optional)
 - Requires proper folder structure
 - More control over version
 

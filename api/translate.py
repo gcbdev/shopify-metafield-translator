@@ -1,30 +1,71 @@
 """
 Vercel serverless function for Google Translate using googletrans library
 This provides a more reliable translation service than direct HTTP calls
+With fallback to translators library (37+ services)
 """
 
 import json
 import asyncio
 from googletrans import Translator
 
+# Try to import translators library for fallback (37+ translation services)
+try:
+    import translators as ts
+    HAS_TRANSLATORS = True
+except ImportError:
+    HAS_TRANSLATORS = False
+    ts = None
+
 
 async def translate_text(text, source_lang='auto', target_lang='en'):
-    """Translate text using googletrans"""
+    """Translate text using googletrans, with fallback to translators library"""
+    # Try googletrans first (primary)
     try:
         async with Translator() as translator:
             result = await translator.translate(text, src=source_lang, dest=target_lang)
             return result.text
     except Exception as e:
-        raise Exception(f"Translation error: {str(e)}")
+        # Fallback to translators library if googletrans fails
+        if HAS_TRANSLATORS:
+            try:
+                # Try multiple services in order: Google -> Bing -> Alibaba -> Yandex
+                services = ['google', 'bing', 'alibaba', 'yandex', 'myMemory']
+                for service in services:
+                    try:
+                        result = ts.translate_text(text, translator=service, from_language=source_lang, to_language=target_lang)
+                        return result if isinstance(result, str) else str(result)
+                    except:
+                        continue  # Try next service
+                raise Exception("All translators library services failed")
+            except Exception as ts_error:
+                raise Exception(f"Translation error: {str(e)} (googletrans failed) | {str(ts_error)} (translators fallback failed)")
+        else:
+            raise Exception(f"Translation error: {str(e)}")
 
 
 async def translate_json_content(obj, source_lang='auto', target_lang='en'):
-    """Recursively translate JSON object"""
+    """Recursively translate JSON object with fallback support"""
     if isinstance(obj, str):
         # Skip very short strings or numbers
         if len(obj) < 3 or obj.isdigit():
             return obj
-        return await translate_text(obj, source_lang, target_lang)
+        try:
+            return await translate_text(obj, source_lang, target_lang)
+        except Exception as e:
+            # If translation fails, try translators library directly for this text
+            if HAS_TRANSLATORS:
+                try:
+                    services = ['google', 'bing', 'alibaba', 'yandex']
+                    for service in services:
+                        try:
+                            result = ts.translate_text(obj, translator=service, from_language=source_lang, to_language=target_lang)
+                            return result if isinstance(result, str) else str(result)
+                        except:
+                            continue
+                except:
+                    pass  # If all fail, return original
+            # If all translation methods fail, return original text
+            return obj
     elif isinstance(obj, list):
         return [await translate_json_content(item, source_lang, target_lang) for item in obj]
     elif isinstance(obj, dict):
@@ -59,10 +100,25 @@ async def translate_json_content(obj, source_lang='auto', target_lang='en'):
 
 def handler(req):
     """Vercel serverless function handler"""
-    # Get method from request
-    method = req.get('method', 'GET')
-    body = req.get('body', '{}')
-    headers = req.get('headers', {})
+    # Get method from request (handles dict or object)
+    try:
+        if hasattr(req, 'get'):
+            method = req.get('method', 'GET')
+            body = req.get('body', '{}')
+            headers = req.get('headers', {})
+        elif isinstance(req, dict):
+            method = req.get('method', 'GET')
+            body = req.get('body', '{}')
+            headers = req.get('headers', {})
+        else:
+            method = getattr(req, 'method', 'GET')
+            body = getattr(req, 'body', '{}')
+            headers = getattr(req, 'headers', {})
+    except:
+        # Fallback if request format is unexpected
+        method = 'GET'
+        body = '{}'
+        headers = {}
     
     # Handle CORS preflight
     if method == 'OPTIONS':
@@ -171,6 +227,6 @@ def handler(req):
         }
 
 
-# Export default handler for Vercel
-default = handler
+# Vercel automatically detects the handler function
+# No need to export 'default' - function name 'handler' is sufficient
 
