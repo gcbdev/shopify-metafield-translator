@@ -610,14 +610,15 @@ async function translateWithPythonAPI(text, sourceLanguage, targetLanguage) {
   try {
     // Determine base URL - use request host in production, localhost in dev
     let baseUrl;
-    if (process.env.VERCEL_URL) {
+    // Prefer explicit PUBLIC_URL (production domain) to avoid preview 401s
+    if (process.env.PUBLIC_URL) {
+      baseUrl = process.env.PUBLIC_URL;
+    } else if (process.env.VERCEL_URL) {
       baseUrl = `https://${process.env.VERCEL_URL}`;
     } else if (process.env.VERCEL) {
-      // In Vercel, use the current request's host
-      baseUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000';
+      baseUrl = 'http://localhost:3000';
     } else {
-      // Local development
-      baseUrl = process.env.PUBLIC_URL || 'http://localhost:3000';
+      baseUrl = 'http://localhost:3000';
     }
     
     console.log(`🐍 Using Python googletrans API at ${baseUrl}/api/translate...`);
@@ -1072,12 +1073,14 @@ async function translateJsonContent(jsonContent, sourceLanguage, targetLanguage)
   const primaryService = process.env.PRIMARY_TRANSLATION_SERVICE || 'googletrans';
   if ((primaryService === 'googletrans' || primaryService === 'auto') && typeof jsonContent === 'object') {
     try {
-      let baseUrl;
-      if (process.env.VERCEL_URL) {
-        baseUrl = `https://${process.env.VERCEL_URL}`;
-      } else {
-        baseUrl = process.env.PUBLIC_URL || 'http://localhost:3000';
-      }
+             let baseUrl;
+             if (process.env.PUBLIC_URL) {
+               baseUrl = process.env.PUBLIC_URL;
+             } else if (process.env.VERCEL_URL) {
+               baseUrl = `https://${process.env.VERCEL_URL}`;
+             } else {
+               baseUrl = 'http://localhost:3000';
+             }
       
       console.log(`🐍 Using Python API for JSON translation...`);
       const response = await axios.post(`${baseUrl}/api/translate`, {
