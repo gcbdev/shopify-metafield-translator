@@ -98,135 +98,84 @@ async def translate_json_content(obj, source_lang='auto', target_lang='en'):
         return obj
 
 
-def handler(req):
-    """Vercel serverless function handler"""
-    # Get method from request (handles dict or object)
-    try:
-        if hasattr(req, 'get'):
-            method = req.get('method', 'GET')
-            body = req.get('body', '{}')
-            headers = req.get('headers', {})
-        elif isinstance(req, dict):
-            method = req.get('method', 'GET')
-            body = req.get('body', '{}')
-            headers = req.get('headers', {})
-        else:
-            method = getattr(req, 'method', 'GET')
-            body = getattr(req, 'body', '{}')
-            headers = getattr(req, 'headers', {})
-    except:
-        # Fallback if request format is unexpected
-        method = 'GET'
-        body = '{}'
-        headers = {}
+def handler(request):
+    """Vercel serverless function handler - must be named 'handler'"""
+    # Vercel passes request as a dict
+    if not isinstance(request, dict):
+        method = getattr(request, 'method', getattr(request, 'httpMethod', 'GET'))
+        body = getattr(request, 'body', '{}')
+    else:
+        method = request.get('method', request.get('httpMethod', 'GET'))
+        body = request.get('body', '{}')
     
-    # Handle CORS preflight
+    # Parse body
+    try:
+        if isinstance(body, str):
+            body_data = json.loads(body) if body and body != '{}' else {}
+        else:
+            body_data = body if body else {}
+    except:
+        body_data = {}
+    
+    # CORS headers
+    cors_headers = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type'
+    }
+    
+    # Handle OPTIONS (CORS preflight)
     if method == 'OPTIONS':
-        return {
-            'statusCode': 200,
-            'headers': {
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-                'Access-Control-Allow-Headers': 'Content-Type'
-            },
-            'body': ''
-        }
+        return {'statusCode': 200, 'headers': cors_headers, 'body': ''}
     
     # Handle GET (health check)
     if method == 'GET':
         return {
             'statusCode': 200,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            },
-            'body': json.dumps({
-                'status': 'ok',
-                'service': 'googletrans-api',
-                'message': 'Google Translate API is running'
-            })
+            'headers': {'Content-Type': 'application/json', **cors_headers},
+            'body': json.dumps({'status': 'ok', 'service': 'googletrans-api', 'message': 'Google Translate API is running'})
         }
     
     # Handle POST (translation)
     try:
-        # Parse request body
-        if isinstance(body, str):
-            data = json.loads(body)
-        else:
-            data = body if body else {}
-        
-        text = data.get('text')
-        source_lang = data.get('sourceLanguage', 'auto')
-        target_lang = data.get('targetLanguage', 'en')
-        is_json = data.get('isJson', False)
-        json_content = data.get('jsonContent')
+        text = body_data.get('text')
+        source_lang = body_data.get('sourceLanguage', 'auto')
+        target_lang = body_data.get('targetLanguage', 'en')
+        is_json = body_data.get('isJson', False)
+        json_content = body_data.get('jsonContent')
         
         if not text and not json_content:
             return {
                 'statusCode': 400,
-                'headers': {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*'
-                },
-                'body': json.dumps({
-                    'success': False,
-                    'error': 'Missing text or jsonContent'
-                })
+                'headers': {'Content-Type': 'application/json', **cors_headers},
+                'body': json.dumps({'success': False, 'error': 'Missing text or jsonContent'})
             }
         
         # Run async translation
         result = None
         if is_json and json_content:
-            # Translate JSON object
             result = asyncio.run(translate_json_content(json_content, source_lang, target_lang))
         elif json_content:
-            # JSON content as string
             parsed_json = json.loads(json_content) if isinstance(json_content, str) else json_content
             result = asyncio.run(translate_json_content(parsed_json, source_lang, target_lang))
         else:
-            # Simple text translation
             result = asyncio.run(translate_text(text, source_lang, target_lang))
         
         return {
             'statusCode': 200,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            },
-            'body': json.dumps({
-                'success': True,
-                'translated': result,
-                'sourceLanguage': source_lang,
-                'targetLanguage': target_lang
-            })
+            'headers': {'Content-Type': 'application/json', **cors_headers},
+            'body': json.dumps({'success': True, 'translated': result, 'sourceLanguage': source_lang, 'targetLanguage': target_lang})
         }
         
-    except json.JSONDecodeError as e:
+    except json.JSONDecodeError:
         return {
             'statusCode': 400,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            },
-            'body': json.dumps({
-                'success': False,
-                'error': 'Invalid JSON in request body'
-            })
+            'headers': {'Content-Type': 'application/json', **cors_headers},
+            'body': json.dumps({'success': False, 'error': 'Invalid JSON in request body'})
         }
     except Exception as e:
         return {
             'statusCode': 500,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            },
-            'body': json.dumps({
-                'success': False,
-                'error': f'Translation failed: {str(e)}'
-            })
+            'headers': {'Content-Type': 'application/json', **cors_headers},
+            'body': json.dumps({'success': False, 'error': f'Translation failed: {str(e)}'})
         }
-
-
-# Vercel automatically detects the handler function
-# No need to export 'default' - function name 'handler' is sufficient
-
