@@ -4,9 +4,17 @@
     {
       "src": "server.js",
       "use": "@vercel/node"
+    },
+    {
+      "src": "api/translate.py",
+      "use": "@vercel/python"
     }
   ],
   "routes": [
+    {
+      "src": "/api/translate",
+      "dest": "api/translate.py"
+    },
     {
       "src": "/(.*)",
       "dest": "server.js"

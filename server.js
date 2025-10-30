@@ -566,10 +566,11 @@ async function translateText(text, sourceLanguage, targetLanguage) {
         translatedChunks.push(textChunks[i]); // Use original if translation fails
       }
       
-      // Delay between chunks to ensure complete translation and avoid rate limits
+      // Delay between chunks - reduced to avoid timeouts
       if (i < textChunks.length - 1) {
-        console.log(`⏱️ Waiting 300ms before next chunk...`);
-        await new Promise(resolve => setTimeout(resolve, 300));
+        const chunkDelay = parseInt(process.env.TRANSLATION_CHUNK_DELAY) || 200;
+        console.log(`⏱️ Waiting ${chunkDelay}ms before next chunk...`);
+        await new Promise(resolve => setTimeout(resolve, chunkDelay));
       }
     }
     
@@ -604,21 +605,142 @@ async function translateText(text, sourceLanguage, targetLanguage) {
   return await translateSingleChunk(text, sourceLanguage, targetLanguage);
 }
 
+// Function to call Python googletrans API
+async function translateWithPythonAPI(text, sourceLanguage, targetLanguage) {
+  try {
+    // Determine base URL - use request host in production, localhost in dev
+    let baseUrl;
+    if (process.env.VERCEL_URL) {
+      baseUrl = `https://${process.env.VERCEL_URL}`;
+    } else if (process.env.VERCEL) {
+      // In Vercel, use the current request's host
+      baseUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000';
+    } else {
+      // Local development
+      baseUrl = process.env.PUBLIC_URL || 'http://localhost:3000';
+    }
+    
+    console.log(`🐍 Using Python googletrans API at ${baseUrl}/api/translate...`);
+    
+    const response = await axios.post(`${baseUrl}/api/translate`, {
+      text: text,
+      sourceLanguage: sourceLanguage,
+      targetLanguage: targetLanguage
+    }, {
+      timeout: 25000, // 25s timeout (Python functions have 10s on Vercel Hobby)
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    if (response.data && response.data.success) {
+      console.log(`✅ Python API translation successful`);
+      return response.data.translated;
+    } else {
+      throw new Error('Python API returned unsuccessful response');
+    }
+  } catch (error) {
+    console.log(`❌ Python API translation failed: ${error.message}`);
+    // Don't throw - fallback to other services
+    throw error;
+  }
+}
+
 async function translateSingleChunk(text, sourceLanguage, targetLanguage, retryCount = 0) {
   const maxRetries = 1; // Only 1 retry to avoid wasting time
-  const baseDelay = 5000; // Increased to 5 seconds to avoid rate limits
-  const shortTextThreshold = 500; // Use MyMemory for short, Google for long
+  // Configurable delay - reduced from 5s to 1s by default, configurable via env
+  const baseDelay = parseInt(process.env.TRANSLATION_DELAY) || 1000;
+  const shortTextThreshold = 500; // Use free services (MyMemory/Yandex/Google) for short, Google for long
+  // Yandex API credentials (hardcoded for now, can be overridden via env vars)
+  const yandexApiKey = process.env.YANDEX_API_KEY || 'AQVNytwIR5D0Njp54CNXOaTQ-J3qQkj2lcLpc6Bu';
+  const yandexFolderId = process.env.YANDEX_FOLDER_ID || 'b1gn8gj1pk8hilk34vt1';
+  const primaryService = process.env.PRIMARY_TRANSLATION_SERVICE || 'googletrans'; // Default to googletrans
   
   console.log(`🔤 Translating: "${text.substring(0, 80)}${text.length > 80 ? '...' : ''}" [${sourceLanguage} → ${targetLanguage}]`);
   
-  // Progressive delay - increase with each retry
-  const waitTime = baseDelay + (retryCount * 2000); // Base + increasing retry delays
-  if (retryCount > 0) {
-    console.log(`⏱️ Waiting ${waitTime}ms (attempt ${retryCount + 1}/${maxRetries + 1})...`);
-  } else {
-    console.log(`⏱️ Waiting ${waitTime}ms...`);
+  // Try Python googletrans API FIRST if enabled (more reliable)
+  if (primaryService === 'googletrans' || primaryService === 'auto') {
+    try {
+      const pythonResult = await translateWithPythonAPI(text, sourceLanguage, targetLanguage);
+      if (pythonResult && pythonResult !== text) {
+        console.log(`✅ Python googletrans: ${text.length} → ${pythonResult.length} chars`);
+        return pythonResult;
+      }
+    } catch (pythonError) {
+      console.log(`⚠️ Python API failed, falling back to HTTP services...`);
+      // Continue to fallback services
+    }
   }
-  await new Promise(resolve => setTimeout(resolve, waitTime));
+  
+  // Try Yandex Translate FIRST if API key is provided (free tier: 10M chars/day, no credit card required)
+  if (yandexApiKey && yandexFolderId && (primaryService === 'yandex' || primaryService === 'auto')) {
+    try {
+      console.log(`🌐 Trying Yandex Translate (free, 10M chars/day)...`);
+      
+      // Yandex language code mapping
+      const yandexLangMap = {
+        'en': 'en', 'fr': 'fr', 'es': 'es', 'de': 'de', 'it': 'it', 'pt': 'pt',
+        'ru': 'ru', 'ja': 'ja', 'zh': 'zh', 'ko': 'ko', 'nl': 'nl', 'pl': 'pl'
+      };
+      
+      const yandexTarget = yandexLangMap[targetLanguage.toLowerCase()] || targetLanguage.toLowerCase();
+      const yandexSource = sourceLanguage ? (yandexLangMap[sourceLanguage.toLowerCase()] || sourceLanguage.toLowerCase()) : '';
+      
+      const yandexParams = {
+        folderId: yandexFolderId,
+        texts: [text],
+        targetLanguageCode: yandexTarget
+      };
+      
+      if (yandexSource) {
+        yandexParams.sourceLanguageCode = yandexSource;
+      }
+      
+      const yandexResponse = await axios.post(
+        'https://translate.api.cloud.yandex.net/translate/v2/translate',
+        yandexParams,
+        {
+          headers: {
+            'Authorization': `Api-Key ${yandexApiKey}`,
+            'Content-Type': 'application/json'
+          },
+          timeout: 8000 // 8 second timeout for Yandex
+        }
+      );
+      
+      if (yandexResponse.data && yandexResponse.data.translations && yandexResponse.data.translations.length > 0) {
+        const translated = yandexResponse.data.translations[0].text;
+        if (translated && translated !== text) {
+          console.log(`✅ Yandex Translate: ${text.length} → ${translated.length} chars`);
+          return translated;
+        }
+      }
+    } catch (yandexError) {
+      const status = yandexError.response?.status;
+      if (status === 429) {
+        console.log(`⚠️ Yandex Translate rate limit exceeded (10M chars/day limit reached). Using fallback services...`);
+      } else if (status === 403) {
+        console.log(`❌ Yandex Translate access forbidden. Check API key and folder ID. Using fallback services...`);
+      } else {
+        console.log(`❌ Yandex Translate failed: ${status || ''} ${yandexError.message}. Using fallback services...`);
+      }
+      // Continue to fallback services
+    }
+  }
+  
+  // Only add delay if we're retrying or if using free services (Yandex skips initial delay for faster translations)
+  // Prioritize Yandex: if credentials exist and primaryService is 'auto' or 'yandex', treat as premium service
+  const hasYandex = yandexApiKey && yandexFolderId && (primaryService === 'auto' || primaryService === 'yandex');
+  const hasPremiumService = hasYandex;
+  const waitTime = retryCount > 0 ? (baseDelay + (retryCount * 1000)) : (hasPremiumService ? 0 : baseDelay);
+  if (waitTime > 0) {
+    if (retryCount > 0) {
+      console.log(`⏱️ Waiting ${waitTime}ms (attempt ${retryCount + 1}/${maxRetries + 1})...`);
+    } else {
+      console.log(`⏱️ Waiting ${waitTime}ms...`);
+    }
+    await new Promise(resolve => setTimeout(resolve, waitTime));
+  }
 
   // For LONG texts (>500 chars): Use Google Translate FIRST (best for long HTML content)
   // For SHORT texts (<500 chars): Use MyMemory first (faster, more reliable)
@@ -914,6 +1036,38 @@ function isLikelyEnglish(text) {
 
 // Translate JSON content - return ONLY the French translation
 async function translateJsonContent(jsonContent, sourceLanguage, targetLanguage) {
+  // Try Python API first for JSON translation (more reliable)
+  const primaryService = process.env.PRIMARY_TRANSLATION_SERVICE || 'googletrans';
+  if ((primaryService === 'googletrans' || primaryService === 'auto') && typeof jsonContent === 'object') {
+    try {
+      let baseUrl;
+      if (process.env.VERCEL_URL) {
+        baseUrl = `https://${process.env.VERCEL_URL}`;
+      } else {
+        baseUrl = process.env.PUBLIC_URL || 'http://localhost:3000';
+      }
+      
+      console.log(`🐍 Using Python API for JSON translation...`);
+      const response = await axios.post(`${baseUrl}/api/translate`, {
+        jsonContent: jsonContent,
+        isJson: true,
+        sourceLanguage: sourceLanguage,
+        targetLanguage: targetLanguage
+      }, {
+        timeout: 60000, // Longer timeout for JSON (can be large)
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      if (response.data && response.data.success) {
+        console.log(`✅ Python API JSON translation successful`);
+        return response.data.translated;
+      }
+    } catch (error) {
+      console.log(`⚠️ Python API JSON translation failed, using fallback: ${error.message}`);
+      // Fall through to normal translation
+    }
+  }
+  
   if (typeof jsonContent === 'string') {
     // Skip very short strings or numbers
     if (jsonContent.length < 3 || /^\d+$/.test(jsonContent)) {
@@ -1788,17 +1942,20 @@ app.post('/api/bulk-translate-all', authenticateShopify, async (req, res) => {
       details: []
     };
 
-    // Process products in batches to avoid overwhelming the API
-    const batchSize = 5; // Smaller batches for better rate limit management
+    // Process products in batches - 20 products per batch with 10s delay between batches
+    const batchSize = 20; // Process 20 products at a time
     for (let i = 0; i < allProducts.length; i += batchSize) {
       const batch = allProducts.slice(i, i + batchSize);
+      const batchNumber = Math.floor(i/batchSize) + 1;
+      const totalBatches = Math.ceil(allProducts.length/batchSize);
       
-      console.log(`Processing batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(allProducts.length/batchSize)} (${batch.length} products)`);
+      console.log(`\n📦 Processing batch ${batchNumber}/${totalBatches} (${batch.length} products)`);
+      console.log(`Products ${i + 1} to ${Math.min(i + batchSize, allProducts.length)} of ${allProducts.length}`);
       
       // Check rate limit before processing each batch
       await rateLimitManager.ensureRateLimitAvailable();
       
-      // Process batch in parallel
+      // Process batch in parallel for faster translation
       const batchPromises = batch.map(async (product) => {
         try {
           // Check if product has metafield
@@ -1826,13 +1983,51 @@ app.post('/api/bulk-translate-all', authenticateShopify, async (req, res) => {
             return { productId: product.id, status: 'error', reason: 'Invalid JSON in metafield', title: product.title };
           }
 
-          // STEP 1: ALWAYS translate original content to English first
-          console.log(`STEP 1: Translating original content to English for product ${product.id}...`);
-          const englishContent = await translateJsonContent(jsonContent, sourceLanguage, 'en');
+          // OPTIMIZED: Translate entire JSON in one call using Python API (MUCH FASTER)
+          console.log(`🚀 Fast translating JSON for product ${product.id}: ${product.title}`);
           
-          // STEP 2: Translate English content to French
-          console.log(`STEP 2: Translating English content to French for product ${product.id}...`);
-          const frenchContent = await translateJsonContent(englishContent, 'en', 'fr');
+          let frenchContent;
+          const usePythonAPI = process.env.PRIMARY_TRANSLATION_SERVICE === 'googletrans' || 
+                               process.env.PRIMARY_TRANSLATION_SERVICE === 'auto';
+          
+          if (usePythonAPI) {
+            try {
+              // Try Python API for fast JSON translation (one call instead of two steps)
+              let baseUrl;
+              if (process.env.VERCEL_URL) {
+                baseUrl = `https://${process.env.VERCEL_URL}`;
+              } else {
+                baseUrl = process.env.PUBLIC_URL || 'http://localhost:3000';
+              }
+              
+              // Translate directly from source to target (faster than two-step)
+              const response = await axios.post(`${baseUrl}/api/translate`, {
+                jsonContent: jsonContent,
+                isJson: true,
+                sourceLanguage: sourceLanguage,
+                targetLanguage: targetLanguage
+              }, {
+                timeout: 60000, // 60s timeout for JSON translation
+                headers: { 'Content-Type': 'application/json' }
+              });
+              
+              if (response.data && response.data.success) {
+                frenchContent = response.data.translated;
+                console.log(`✅ Python API: Product ${product.id} translated in one call`);
+              } else {
+                throw new Error('Python API returned unsuccessful');
+              }
+            } catch (pythonError) {
+              console.log(`⚠️ Python API failed for product ${product.id}, using fallback method...`);
+              // Fallback to two-step translation
+              const englishContent = await translateJsonContent(jsonContent, sourceLanguage, 'en');
+              frenchContent = await translateJsonContent(englishContent, 'en', targetLanguage);
+            }
+          } else {
+            // Fallback: Two-step translation (original -> English -> Target)
+            const englishContent = await translateJsonContent(jsonContent, sourceLanguage, 'en');
+            frenchContent = await translateJsonContent(englishContent, 'en', targetLanguage);
+          }
 
           // Use Shopify's GraphQL Translations API to fill the French field
           // This fills the French field in Shopify's interface without modifying the original
@@ -1928,9 +2123,12 @@ app.post('/api/bulk-translate-all', authenticateShopify, async (req, res) => {
         results.details.push(result);
       });
 
-      // Rate limiting - wait between batches
+      // Add 10 second delay between batches to avoid pagination/rate limit issues
       if (i + batchSize < allProducts.length) {
-        await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay between batches
+        console.log(`\n⏱️ Waiting 10 seconds before next batch to avoid rate limiting...`);
+        console.log(`   Completed: ${results.processed}/${allProducts.length} products`);
+        console.log(`   Success: ${results.success}, Errors: ${results.errors}, Skipped: ${results.skipped}`);
+        await new Promise(resolve => setTimeout(resolve, 10000)); // 10 second delay between batches
       }
     }
 

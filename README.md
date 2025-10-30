@@ -1,6 +1,10 @@
 # Shopify Metafield Translator App
 
+
+
 This Shopify app allows you to translate specific product metafields that contain JSON-formatted data.
+
+
 
 ## Features
 
@@ -8,8 +12,10 @@ This Shopify app allows you to translate specific product metafields that contai
 - Support for custom.specification metafield
 - Secure API authentication with Shopify
 - Web interface for managing translations
-- **Free MyMemory translation API** - No API key required!
-- Support for Google Translate, DeepL, and Azure (optional)
+- **Yandex Translate API** - Free tier: 10M chars/day, no credit card required (recommended)
+- **Free MyMemory translation API** - No API key required (fallback)
+- Support for Google Translate and LibreTranslate (free fallbacks)
+- **Optimized for Vercel** - Reduced delays to prevent timeout issues
 
 ## Setup
 
@@ -25,7 +31,12 @@ SHOPIFY_API_SECRET=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
 SHOPIFY_SCOPES=read_products,write_products,read_product_listings,write_product_listings
 HOST=https://your-app-domain.com
 PORT=3000
-TRANSLATION_SERVICE=mymemory
+
+# Optional: Yandex Translate (recommended - free, 10M chars/day)
+# See YANDEX_API_SETUP.md for setup instructions
+YANDEX_API_KEY=
+YANDEX_FOLDER_ID=
+PRIMARY_TRANSLATION_SERVICE=auto
 ```
 
 3. Start the development server:
