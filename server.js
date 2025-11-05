@@ -514,31 +514,129 @@ app.get('/api/products/search', authenticateShopify, async (req, res) => {
         }
       }
     } else {
-      // Search by title or handle
+      // Search by title or handle - try GraphQL first (more efficient), fallback to REST pagination
       console.log('Searching by title/handle:', query);
-      const response = await axios.get(`https://${shop}/admin/api/2023-10/products.json`, {
-        headers: {
-          'X-Shopify-Access-Token': accessToken,
-          'Content-Type': 'application/json'
-        },
-        params: {
-          limit: 250,
-          fields: 'id,title,handle'
-        }
-      });
-
-      const allProducts = response.data.products;
       const queryLower = query.toLowerCase();
+      let searchPages = 0;
+      const maxSearchPages = 20; // Limit to 20 pages (5000 products) to avoid timeout
+      const maxResults = 50; // Limit total results
+      
+      // Try GraphQL search first (more efficient)
+      try {
+        console.log('Attempting GraphQL search...');
+        const graphqlQuery = `
+          query searchProducts($query: String!, $first: Int!) {
+            products(first: $first, query: $query) {
+              edges {
+                node {
+                  id
+                  title
+                  handle
+                }
+              }
+            }
+          }
+        `;
+        
+        const graphqlResponse = await axios.post(
+          `https://${shop}/admin/api/2023-10/graphql.json`,
+          {
+            query: graphqlQuery,
+            variables: {
+              query: `title:*${query}* OR handle:*${query}*`,
+              first: maxResults
+            }
+          },
+          {
+            headers: {
+              'X-Shopify-Access-Token': accessToken,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+        
+        if (graphqlResponse.data && graphqlResponse.data.data && graphqlResponse.data.data.products) {
+          const graphqlProducts = graphqlResponse.data.data.products.edges.map(edge => ({
+            id: edge.node.id.replace('gid://shopify/Product/', ''),
+            title: edge.node.title,
+            handle: edge.node.handle
+          }));
+          
+          if (graphqlProducts.length > 0) {
+            console.log(`GraphQL search found ${graphqlProducts.length} products`);
+            products = graphqlProducts;
+          }
+        }
+      } catch (graphqlError) {
+        console.log('GraphQL search failed, falling back to REST pagination:', graphqlError.message);
+      }
+      
+      // Fallback to REST pagination if GraphQL didn't return results
+      if (products.length === 0) {
+        console.log('Using REST API pagination search...');
+        let nextPageInfo = null;
+        
+        // Search through multiple pages
+        while (products.length < maxResults && searchPages < maxSearchPages) {
+          const params = {
+            limit: 250,
+            fields: 'id,title,handle'
+          };
+          
+          if (nextPageInfo) {
+            params.page_info = nextPageInfo;
+          }
+          
+          const response = await axios.get(`https://${shop}/admin/api/2023-10/products.json`, {
+            headers: {
+              'X-Shopify-Access-Token': accessToken,
+              'Content-Type': 'application/json'
+            },
+            params: params
+          });
 
-      // Filter products by title or handle
-      products = allProducts.filter(product => {
-        const titleMatch = product.title?.toLowerCase().includes(queryLower);
-        const handleMatch = product.handle?.toLowerCase().includes(queryLower);
-        return titleMatch || handleMatch;
-      });
+          const pageProducts = response.data.products;
+          searchPages++;
+          
+          console.log(`Searching page ${searchPages}: ${pageProducts.length} products`);
 
-      // Limit to first 50 results
-      products = products.slice(0, 50);
+          // Filter products by title or handle
+          const matchingProducts = pageProducts.filter(product => {
+            const titleMatch = product.title?.toLowerCase().includes(queryLower);
+            const handleMatch = product.handle?.toLowerCase().includes(queryLower);
+            return titleMatch || handleMatch;
+          });
+          
+          products = [...products, ...matchingProducts];
+          
+          // Check if there are more pages
+          const linkHeader = response.headers['link'];
+          if (linkHeader && linkHeader.includes('rel="next"')) {
+            const nextMatch = linkHeader.match(/<([^>]+)>; rel="next"/);
+            if (nextMatch) {
+              const nextUrl = nextMatch[1];
+              const urlParams = new URLSearchParams(nextUrl.split('?')[1]);
+              nextPageInfo = urlParams.get('page_info');
+            } else {
+              nextPageInfo = null;
+            }
+          } else {
+            nextPageInfo = null;
+          }
+          
+          // Stop if no more pages
+          if (!nextPageInfo || pageProducts.length < 250) {
+            break;
+          }
+          
+          // Small delay to respect rate limits
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+
+        // Limit to first maxResults
+        products = products.slice(0, maxResults);
+        console.log(`REST pagination searched through ${searchPages} page(s), found ${products.length} matching products`);
+      }
     }
 
     if (products.length === 0) {
