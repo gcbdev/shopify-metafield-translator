@@ -1316,6 +1316,24 @@ function isLikelyEnglish(text) {
 
 // Translate JSON content - return ONLY the French translation
 async function translateJsonContent(jsonContent, sourceLanguage, targetLanguage) {
+  // Validate input
+  if (!jsonContent) {
+    console.log(`⚠️ Empty or null jsonContent, returning as-is`);
+    return jsonContent;
+  }
+  
+  // Check if it's an empty object or array
+  if (typeof jsonContent === 'object') {
+    if (Array.isArray(jsonContent) && jsonContent.length === 0) {
+      console.log(`⚠️ Empty array, returning as-is`);
+      return jsonContent;
+    }
+    if (!Array.isArray(jsonContent) && Object.keys(jsonContent).length === 0) {
+      console.log(`⚠️ Empty object, returning as-is`);
+      return jsonContent;
+    }
+  }
+  
   // Try Python API first for JSON translation (more reliable)
   const primaryService = process.env.PRIMARY_TRANSLATION_SERVICE || 'googletrans';
   if ((primaryService === 'googletrans' || primaryService === 'auto') && typeof jsonContent === 'object') {
@@ -1928,6 +1946,12 @@ app.post('/api/translate', async (req, res) => {
     }
 
     const metafield = metafieldData.metafield;
+    
+    // Check if metafield has a value
+    if (!metafield.value || metafield.value.trim() === '') {
+      return res.status(400).json({ error: 'Metafield is empty - no content to translate' });
+    }
+    
     let jsonContent;
 
     try {
@@ -1935,9 +1959,25 @@ app.post('/api/translate', async (req, res) => {
     } catch (error) {
       return res.status(400).json({ error: 'Metafield content is not valid JSON' });
     }
+    
+    // Validate that jsonContent is not empty
+    if (!jsonContent) {
+      return res.status(400).json({ error: 'Parsed JSON content is empty' });
+    }
+    
+    if (typeof jsonContent === 'object') {
+      if (Array.isArray(jsonContent) && jsonContent.length === 0) {
+        return res.status(400).json({ error: 'JSON content is an empty array' });
+      }
+      if (!Array.isArray(jsonContent) && Object.keys(jsonContent).length === 0) {
+        return res.status(400).json({ error: 'JSON content is an empty object' });
+      }
+    }
 
     // STEP 1: ALWAYS translate original content to English first
     console.log('STEP 1: Translating original content to English first...');
+    console.log('JSON Content type:', typeof jsonContent);
+    console.log('JSON Content keys:', typeof jsonContent === 'object' && !Array.isArray(jsonContent) ? Object.keys(jsonContent) : 'N/A');
     const englishContent = await translateJsonContent(jsonContent, sourceLanguage, 'en');
     
     // STEP 2: Translate English content to target language
