@@ -470,6 +470,155 @@ app.get('/api/products', authenticateShopify, async (req, res) => {
   }
 });
 
+// Search products by title, handle, or ID
+app.get('/api/products/search', authenticateShopify, async (req, res) => {
+  try {
+    const shop = req.shop;
+    const query = req.query.q?.trim();
+    const accessToken = req.accessToken;
+
+    if (!query) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Search query is required' 
+      });
+    }
+
+    console.log('=== PRODUCT SEARCH START ===');
+    console.log('Shop:', shop);
+    console.log('Search query:', query);
+
+    // Check if query is a numeric ID
+    const isNumericId = /^\d+$/.test(query);
+    let products = [];
+
+    if (isNumericId) {
+      // Search by product ID
+      console.log('Searching by product ID:', query);
+      try {
+        const response = await axios.get(`https://${shop}/admin/api/2023-10/products/${query}.json`, {
+          headers: {
+            'X-Shopify-Access-Token': accessToken,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (response.data.product) {
+          products = [response.data.product];
+        }
+      } catch (error) {
+        if (error.response?.status === 404) {
+          console.log('Product not found with ID:', query);
+        } else {
+          throw error;
+        }
+      }
+    } else {
+      // Search by title or handle
+      console.log('Searching by title/handle:', query);
+      const response = await axios.get(`https://${shop}/admin/api/2023-10/products.json`, {
+        headers: {
+          'X-Shopify-Access-Token': accessToken,
+          'Content-Type': 'application/json'
+        },
+        params: {
+          limit: 250,
+          fields: 'id,title,handle'
+        }
+      });
+
+      const allProducts = response.data.products;
+      const queryLower = query.toLowerCase();
+
+      // Filter products by title or handle
+      products = allProducts.filter(product => {
+        const titleMatch = product.title?.toLowerCase().includes(queryLower);
+        const handleMatch = product.handle?.toLowerCase().includes(queryLower);
+        return titleMatch || handleMatch;
+      });
+
+      // Limit to first 50 results
+      products = products.slice(0, 50);
+    }
+
+    if (products.length === 0) {
+      return res.json({
+        success: true,
+        products: [],
+        total: 0,
+        message: `No products found matching "${query}"`
+      });
+    }
+
+    // Get metafields for each product
+    const productsWithSpecs = [];
+    const rateLimitManager = new RateLimitManager(shop, accessToken);
+
+    for (const product of products) {
+      try {
+        await rateLimitManager.ensureRateLimitAvailable();
+        
+        const metafieldResponse = await axios.get(`https://${shop}/admin/api/2023-10/products/${product.id}/metafields.json`, {
+          headers: {
+            'X-Shopify-Access-Token': accessToken,
+            'Content-Type': 'application/json'
+          },
+          params: {
+            namespace: 'custom',
+            key: 'specification'
+          }
+        });
+
+        if (metafieldResponse.data.metafields && metafieldResponse.data.metafields.length > 0) {
+          productsWithSpecs.push({
+            id: product.id,
+            title: product.title,
+            handle: product.handle,
+            metafields: metafieldResponse.data.metafields
+          });
+        } else {
+          // Include product even without metafield for search results
+          productsWithSpecs.push({
+            id: product.id,
+            title: product.title,
+            handle: product.handle,
+            metafields: []
+          });
+        }
+      } catch (error) {
+        console.error(`Error fetching metafields for product ${product.id}:`, error.message);
+        // Include product even if metafield fetch fails
+        productsWithSpecs.push({
+          id: product.id,
+          title: product.title,
+          handle: product.handle,
+          metafields: []
+        });
+      }
+    }
+
+    console.log(`Found ${productsWithSpecs.length} products matching "${query}"`);
+
+    res.json({
+      success: true,
+      products: productsWithSpecs,
+      total: productsWithSpecs.length,
+      query: query,
+      message: `Found ${productsWithSpecs.length} product(s) matching "${query}"`
+    });
+  } catch (error) {
+    console.error('=== ERROR SEARCHING PRODUCTS ===');
+    console.error('Error message:', error.message);
+    console.error('Error response:', error.response?.data);
+    
+    res.status(500).json({
+      success: false,
+      error: 'Failed to search products',
+      details: error.message
+    });
+  }
+});
+
 // OAuth callback route (removed as we are using direct API access for now)
 // app.get('/auth/callback', async (req, res) => { ... });
 

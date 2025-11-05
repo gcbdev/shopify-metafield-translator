@@ -452,6 +452,15 @@
         
         <div class="controls">
             <div class="form-group">
+                <label>Search Product (by Title, Handle, or ID)</label>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <input type="text" id="search-input" placeholder="Enter product title, handle, or ID..." style="flex: 1; max-width: 400px;">
+                    <button class="btn" onclick="searchProduct()" id="search-btn" style="background-color: #3b82f6; font-weight: bold;">🔍 Search</button>
+                    <button class="btn btn-secondary" onclick="clearSearch()" id="clear-search-btn" style="display: none;">Clear Search</button>
+                </div>
+                <div id="search-results-info" style="margin-top: 10px; font-size: 14px; color: #6b7280; display: none;"></div>
+            </div>
+            <div class="form-group">
                 <label>Target Language: French</label>
                 <input type="hidden" id="target-language" value="fr">
             </div>
@@ -713,6 +722,8 @@
             // This will be replaced by the actual products display
         }
         
+        let isSearchMode = false; // Track if we're in search mode
+        
         function displayProducts() {
             const container = document.getElementById('products-container');
             
@@ -727,6 +738,7 @@
                     ${products.map(product => {
                         const metafield = product.metafields?.find(m => m.namespace === 'custom' && m.key === 'specification');
                         const metafieldId = metafield ? metafield.id : '';
+                        const hasMetafield = metafieldId !== '';
                         console.log(`Product ${product.title}: metafieldId = ${metafieldId}, metafields =`, product.metafields);
                         return `
                         <div class="product-card" data-metafield-id="${metafieldId}" data-product-id="${product.id}">
@@ -740,6 +752,15 @@
                                 </div>
                             </div>
                             </div>
+                            ${isSearchMode ? `
+                            <div class="product-actions" style="margin-top: 15px;">
+                                ${hasMetafield ? `
+                                    <button class="btn" onclick="translateSingleProduct(${product.id})" style="background-color: #10b981; font-weight: bold;">🌍 Translate This Product</button>
+                                ` : `
+                                    <div style="color: #6b7280; font-size: 14px;">No metafield found - cannot translate</div>
+                                `}
+                            </div>
+                            ` : ''}
                 </div>
             `;
                     }).join('')}
@@ -747,7 +768,7 @@
             `;
             
             // Update product count and pagination
-            if (products.length > 0) {
+            if (products.length > 0 && !isSearchMode) {
                 updateProductCount();
                 // Load French content for all products - DISABLED to reduce API load
                 // loadFrenchContentForAllProducts();
@@ -1900,6 +1921,160 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
             alert(`ENGLISH TRANSLATION COMPLETE!\n\n✅ Successfully translated: ${successCount} products\n❌ Failed: ${errorCount} products\n\nClick "Refresh List" to see updated English content.`);
         }
 
+        // Function to search for a product
+        async function searchProduct() {
+            const searchInput = document.getElementById('search-input');
+            const query = searchInput.value.trim();
+            const searchBtn = document.getElementById('search-btn');
+            const clearBtn = document.getElementById('clear-search-btn');
+            const resultsInfo = document.getElementById('search-results-info');
+            
+            if (!query) {
+                showError('Please enter a search query');
+                return;
+            }
+            
+            if (!shop) {
+                showError('Shop parameter is required');
+                return;
+            }
+            
+            try {
+                searchBtn.disabled = true;
+                searchBtn.textContent = 'Searching...';
+                resultsInfo.style.display = 'none';
+                
+                showLoading();
+                
+                const response = await fetch(`/api/products/search?shop=${shop}&q=${encodeURIComponent(query)}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    products = data.products;
+                    isSearchMode = true;
+                    
+                    // Show search results info
+                    resultsInfo.textContent = data.message;
+                    resultsInfo.style.display = 'block';
+                    resultsInfo.style.color = products.length > 0 ? '#16a34a' : '#dc2626';
+                    
+                    // Show clear button
+                    clearBtn.style.display = 'inline-block';
+                    
+                    // Display products
+                    displayProducts();
+                    
+                    // Hide pagination controls in search mode
+                    document.querySelector('.pagination-controls').style.display = 'none';
+                    document.getElementById('product-count-display').style.display = 'none';
+                    
+                    if (products.length === 0) {
+                        showError(`No products found matching "${query}"`);
+                    } else {
+                        showSuccess(`Found ${products.length} product(s) matching "${query}"`);
+                    }
+                } else {
+                    showError(data.error || 'Search failed');
+                }
+            } catch (error) {
+                console.error('Search error:', error);
+                showError('Failed to search products');
+            } finally {
+                searchBtn.disabled = false;
+                searchBtn.textContent = '🔍 Search';
+            }
+        }
+        
+        // Function to clear search and return to normal view
+        function clearSearch() {
+            const searchInput = document.getElementById('search-input');
+            const clearBtn = document.getElementById('clear-search-btn');
+            const resultsInfo = document.getElementById('search-results-info');
+            
+            searchInput.value = '';
+            clearBtn.style.display = 'none';
+            resultsInfo.style.display = 'none';
+            isSearchMode = false;
+            
+            // Show pagination controls again
+            document.querySelector('.pagination-controls').style.display = 'flex';
+            document.getElementById('product-count-display').style.display = 'block';
+            
+            // Reload normal products list
+            loadProducts();
+        }
+        
+        // Function to translate a single product (from search results)
+        async function translateSingleProduct(productId) {
+            const targetLanguage = document.getElementById('target-language').value;
+            
+            if (!productId) {
+                showError('Product ID is required');
+                return;
+            }
+            
+            if (!shop) {
+                showError('Shop parameter is required');
+                return;
+            }
+            
+            try {
+                // Show loading
+                const container = document.getElementById('products-container');
+                const originalContent = container.innerHTML;
+                container.innerHTML = '<div class="loading">Translating product...</div>';
+                
+                // Call translate API
+                const response = await fetch(`/api/translate?shop=${shop}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        productId: productId,
+                        targetLanguage: targetLanguage,
+                        sourceLanguage: 'en'
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showSuccess(`Product translated successfully!`);
+                    
+                    // Refresh the search results to show updated content
+                    const searchInput = document.getElementById('search-input');
+                    const query = searchInput.value.trim();
+                    if (query) {
+                        // Re-search to refresh the product data
+                        await searchProduct();
+                    } else {
+                        // Reload products
+                        container.innerHTML = originalContent;
+                        await loadProducts();
+                    }
+                } else {
+                    container.innerHTML = originalContent;
+                    showError(data.error || 'Translation failed');
+                }
+            } catch (error) {
+                console.error('Translation error:', error);
+                showError('Failed to translate product');
+            }
+        }
+        
+        // Allow Enter key to trigger search (attach after page loads)
+        setTimeout(function() {
+            const searchInput = document.getElementById('search-input');
+            if (searchInput) {
+                searchInput.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        searchProduct();
+                    }
+                });
+            }
+        }, 100);
+        
         // Function to refresh the products list
         async function refreshProductsList() {
             console.log('Refreshing products list...');
@@ -1908,6 +2083,19 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
             document.getElementById('refresh-list-btn').disabled = true;
             
             try {
+                // If in search mode, re-run search
+                if (isSearchMode) {
+                    const searchInput = document.getElementById('search-input');
+                    const query = searchInput.value.trim();
+                    if (query) {
+                        await searchProduct();
+                        return;
+                    } else {
+                        // Clear search mode
+                        clearSearch();
+                    }
+                }
+                
                 // Reset pagination to page 1
                 currentPage = 1;
                 currentPageIndex = 0;
