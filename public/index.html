@@ -756,6 +756,8 @@
                             <div class="product-actions" style="margin-top: 15px;">
                                 ${hasMetafield ? `
                                     <button class="btn" onclick="translateSingleProduct(${product.id})" style="background-color: #10b981; font-weight: bold;">🌍 Translate This Product</button>
+                                ` : product.metafieldEmpty ? `
+                                    <div style="color: #dc2626; font-size: 14px;">⚠️ Metafield is empty - cannot translate</div>
                                 ` : `
                                     <div style="color: #6b7280; font-size: 14px;">No metafield found - cannot translate</div>
                                 `}
@@ -2004,7 +2006,7 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
             loadProducts();
         }
         
-        // Function to translate a single product (from search results)
+        // Function to translate a single product (from search results) - same as bulk translation
         async function translateSingleProduct(productId) {
             const targetLanguage = document.getElementById('target-language').value;
             
@@ -2022,10 +2024,10 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
                 // Show loading
                 const container = document.getElementById('products-container');
                 const originalContent = container.innerHTML;
-                container.innerHTML = '<div class="loading">Translating product...</div>';
+                container.innerHTML = '<div class="loading">🔄 Translating product and saving to French metafield...</div>';
                 
-                // Call translate API
-                const response = await fetch(`/api/translate?shop=${shop}`, {
+                // Call translate-and-save API (same as bulk translation)
+                const response = await fetch(`/api/translate-single?shop=${shop}`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -2040,7 +2042,7 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
                 const data = await response.json();
                 
                 if (data.success) {
-                    showSuccess(`Product translated successfully!`);
+                    showSuccess(`✅ Product translated and saved successfully!`);
                     
                     // Refresh the search results to show updated content
                     const searchInput = document.getElementById('search-input');
@@ -2055,11 +2057,11 @@ Available Metafields: ${debugInfo.allMetafields.map(m => `${m.namespace}.${m.key
                     }
                 } else {
                     container.innerHTML = originalContent;
-                    showError(data.error || 'Translation failed');
+                    showError(data.error || data.details || 'Translation failed');
                 }
             } catch (error) {
                 console.error('Translation error:', error);
-                showError('Failed to translate product');
+                showError('Failed to translate product: ' + (error.message || 'Unknown error'));
             }
         }
         

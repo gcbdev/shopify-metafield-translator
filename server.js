@@ -668,12 +668,64 @@ app.get('/api/products/search', authenticateShopify, async (req, res) => {
         });
 
         if (metafieldResponse.data.metafields && metafieldResponse.data.metafields.length > 0) {
-          productsWithSpecs.push({
-            id: product.id,
-            title: product.title,
-            handle: product.handle,
-            metafields: metafieldResponse.data.metafields
-          });
+          const metafield = metafieldResponse.data.metafields[0];
+          
+          // Validate that metafield has a non-empty value
+          let hasValidContent = false;
+          let validationError = null;
+          
+          if (metafield.value && metafield.value.trim() !== '') {
+            try {
+              const parsed = JSON.parse(metafield.value);
+              // Check if parsed JSON is not empty
+              if (parsed) {
+                if (typeof parsed === 'object') {
+                  if (Array.isArray(parsed) && parsed.length > 0) {
+                    hasValidContent = true;
+                  } else if (!Array.isArray(parsed) && Object.keys(parsed).length > 0) {
+                    hasValidContent = true;
+                  } else {
+                    validationError = 'Empty object or array';
+                  }
+                } else {
+                  // String, number, boolean, etc. - all valid
+                  hasValidContent = true;
+                }
+              } else {
+                validationError = 'Parsed value is null or undefined';
+              }
+            } catch (e) {
+              // Not valid JSON, but might still have content as plain text
+              console.log(`Product ${product.id}: Metafield is not valid JSON, treating as plain text: ${e.message}`);
+              hasValidContent = metafield.value.trim().length > 0;
+              if (!hasValidContent) {
+                validationError = 'Invalid JSON and empty string';
+              }
+            }
+          } else {
+            validationError = 'Metafield value is empty or whitespace';
+          }
+          
+          if (hasValidContent) {
+            productsWithSpecs.push({
+              id: product.id,
+              title: product.title,
+              handle: product.handle,
+              metafields: metafieldResponse.data.metafields
+            });
+            console.log(`Product ${product.id} (${product.title}): Valid metafield with content`);
+          } else {
+            // Include product but mark metafield as empty
+            console.log(`Product ${product.id} (${product.title}): Metafield validation failed - ${validationError}`);
+            productsWithSpecs.push({
+              id: product.id,
+              title: product.title,
+              handle: product.handle,
+              metafields: [],
+              metafieldEmpty: true,
+              validationError: validationError
+            });
+          }
         } else {
           // Include product even without metafield for search results
           productsWithSpecs.push({
@@ -1919,6 +1971,202 @@ app.post('/api/translate-to-english', async (req, res) => {
     res.status(500).json({ 
       error: 'Failed to translate to English',
       details: error.response?.data || error.message
+    });
+  }
+});
+
+// Single product translate and save (for search results) - same flow as bulk translation
+app.post('/api/translate-single', authenticateShopify, async (req, res) => {
+  try {
+    const { productId, targetLanguage = 'fr', sourceLanguage = 'en' } = req.body;
+    const shop = req.shop;
+    const accessToken = req.accessToken;
+
+    if (!productId) {
+      return res.status(400).json({ error: 'Product ID is required' });
+    }
+
+    console.log(`=== SINGLE PRODUCT TRANSLATE START ===`);
+    console.log(`Product ID: ${productId}`);
+    console.log(`Source: ${sourceLanguage} → Target: ${targetLanguage}`);
+
+    // Get the metafield for the specific product
+    const metafieldResponse = await axios.get(`https://${shop}/admin/api/2023-10/products/${productId}/metafields.json`, {
+      headers: {
+        'X-Shopify-Access-Token': accessToken,
+        'Content-Type': 'application/json'
+      },
+      params: {
+        namespace: 'custom',
+        key: 'specification'
+      }
+    });
+
+    if (!metafieldResponse.data.metafields || metafieldResponse.data.metafields.length === 0) {
+      return res.status(404).json({ error: 'Metafield not found for this product' });
+    }
+
+    const metafield = metafieldResponse.data.metafields[0];
+    
+    // Check if metafield has a value
+    if (!metafield.value || metafield.value.trim() === '') {
+      return res.status(400).json({ error: 'Metafield is empty - no content to translate' });
+    }
+    
+    let jsonContent;
+
+    try {
+      jsonContent = JSON.parse(metafield.value);
+    } catch (error) {
+      return res.status(400).json({ error: 'Metafield content is not valid JSON' });
+    }
+    
+    // Validate that jsonContent is not empty
+    if (!jsonContent) {
+      return res.status(400).json({ error: 'Parsed JSON content is empty' });
+    }
+    
+    if (typeof jsonContent === 'object') {
+      if (Array.isArray(jsonContent) && jsonContent.length === 0) {
+        return res.status(400).json({ error: 'JSON content is an empty array' });
+      }
+      if (!Array.isArray(jsonContent) && Object.keys(jsonContent).length === 0) {
+        return res.status(400).json({ error: 'JSON content is an empty object' });
+      }
+    }
+
+    // Initialize rate limit manager
+    const rateLimitManager = new RateLimitManager(shop, accessToken);
+
+    // Translate the content (same as bulk translation)
+    console.log(`🚀 Translating JSON for product ${productId}`);
+    
+    let frenchContent;
+    const usePythonAPI = process.env.PRIMARY_TRANSLATION_SERVICE === 'googletrans' || 
+                         process.env.PRIMARY_TRANSLATION_SERVICE === 'auto';
+    
+    if (usePythonAPI) {
+      try {
+        // Try Python API for fast JSON translation
+        let baseUrl;
+        if (process.env.PUBLIC_URL) {
+          baseUrl = process.env.PUBLIC_URL;
+        } else if (process.env.VERCEL_URL) {
+          baseUrl = `https://${process.env.VERCEL_URL}`;
+        } else {
+          baseUrl = 'http://localhost:3000';
+        }
+        
+        const response = await axios.post(`${baseUrl}/api/translate`, {
+          jsonContent: jsonContent,
+          isJson: true,
+          sourceLanguage: sourceLanguage,
+          targetLanguage: targetLanguage
+        }, {
+          timeout: 60000,
+          headers: { 'Content-Type': 'application/json' },
+          validateStatus: function (status) {
+            return status < 500;
+          }
+        });
+        
+        if (response.status === 401) {
+          throw new Error('Python API authentication failed (401)');
+        }
+        if (response.status === 429) {
+          console.log(`⚠️ Python API rate limited (429), using fallback...`);
+          throw new Error('Rate limited');
+        }
+        
+        if (response.data && response.data.success) {
+          frenchContent = response.data.translated;
+          console.log(`✅ Python API: Product ${productId} translated`);
+        } else {
+          throw new Error('Python API returned unsuccessful');
+        }
+      } catch (pythonError) {
+        console.log(`⚠️ Python API failed, using fallback method...`);
+        // Fallback to two-step translation
+        const englishContent = await translateJsonContent(jsonContent, sourceLanguage, 'en');
+        frenchContent = await translateJsonContent(englishContent, 'en', targetLanguage);
+      }
+    } else {
+      // Fallback: Two-step translation
+      const englishContent = await translateJsonContent(jsonContent, sourceLanguage, 'en');
+      frenchContent = await translateJsonContent(englishContent, 'en', targetLanguage);
+    }
+
+    // Use Shopify's GraphQL Translations API to save the French translation
+    const graphqlQuery = `
+      mutation CreateTranslation($id: ID!, $translations: [TranslationInput!]!) {
+        translationsRegister(resourceId: $id, translations: $translations) {
+          userErrors {
+            message
+            field
+          }
+          translations {
+            locale
+            key
+            value
+          }
+        }
+      }
+    `;
+
+    // Generate digest for the metafield value (required for translation)
+    const crypto = require('crypto');
+    const originalMetafieldValue = metafield.value;
+    const translatableContentDigest = crypto.createHash('sha256').update(originalMetafieldValue).digest('hex');
+
+    const variables = {
+      id: `gid://shopify/Metafield/${metafield.id}`,
+      translations: [{
+        key: "value",
+        value: JSON.stringify(frenchContent),
+        locale: targetLanguage,
+        translatableContentDigest: translatableContentDigest
+      }]
+    };
+
+    console.log(`Saving ${targetLanguage} translation for product ${productId}...`);
+    console.log('Metafield ID:', metafield.id);
+
+    try {
+      const responseData = await rateLimitManager.makeGraphQLRequest(graphqlQuery, variables);
+      const response = { data: responseData, status: 200 };
+
+      if (response.data.errors) {
+        console.error(`GraphQL errors:`, response.data.errors);
+        throw new Error(`GraphQL errors: ${JSON.stringify(response.data.errors)}`);
+      }
+
+      if (response.data.data?.translationsRegister?.userErrors?.length > 0) {
+        console.error(`Translation errors:`, response.data.data.translationsRegister.userErrors);
+        throw new Error(`Translation registration failed: ${JSON.stringify(response.data.data.translationsRegister.userErrors)}`);
+      }
+
+      if (response.data.data?.translationsRegister?.translations?.length > 0) {
+        console.log(`✅ ${targetLanguage.toUpperCase()} translation saved for product ${productId}`);
+        res.json({
+          success: true,
+          productId: productId,
+          message: `Product translated and saved successfully!`,
+          translation: response.data.data.translationsRegister.translations[0]
+        });
+      } else {
+        throw new Error('No translations were registered');
+      }
+
+    } catch (graphqlError) {
+      console.error(`GraphQL translation failed:`, graphqlError.message);
+      throw graphqlError;
+    }
+
+  } catch (error) {
+    console.error('Single product translation error:', error);
+    res.status(500).json({ 
+      error: 'Translation failed',
+      details: error.message
     });
   }
 });
